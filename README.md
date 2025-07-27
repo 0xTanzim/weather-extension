@@ -1,147 +1,327 @@
-# 🌤️ Modern Weather Extension
+# 🌤️ Weather Extension Monorepo
 
-A beautiful, feature-rich Chrome extension for weather information with overlay functionality and modern UI design.
-
-## ✨ Features
-
-- **🌍 Multi-City Weather**: Add and manage multiple cities
-- **📍 Auto-Location**: Automatically detect your current location
-- **🖼️ Overlay Mode**: Display weather overlay on any webpage
-- **🎨 Modern UI**: Beautiful gradient design with smooth animations
-- **⚡ Real-time Updates**: Live weather data with refresh functionality
-- **🌡️ Temperature Units**: Toggle between Celsius and Fahrenheit
-- **🔒 Secure API**: Multiple API key rotation for reliability
-- **📱 Responsive Design**: Works perfectly on all screen sizes
-
-## 🚀 Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd weather-extension
-   ```
-
-2. **Install dependencies**
-   ```bash
-   pnpm install
-   ```
-
-3. **Set up API keys**
-   - Get your free API key from [OpenWeatherMap](https://openweathermap.org/api)
-   - Create a `.env` file in the root directory:
-   ```env
-   # Single API key
-   OPEN_WEATHER_API_KEY=your_api_key_here
-   
-   # Or multiple keys for rotation (recommended)
-   OPEN_WEATHER_API_KEYS=key1,key2,key3
-   ```
-
-4. **Build the extension**
-   ```bash
-   pnpm build
-   ```
-
-5. **Load in Chrome**
-   - Open Chrome and go to `chrome://extensions/`
-   - Enable "Developer mode"
-   - Click "Load unpacked"
-   - Select the `dist` folder
-
-## 🔧 Development
-
-```bash
-# Start development mode with hot reload
-pnpm start
-
-# Build for production
-pnpm build
-```
-
-## 🛡️ Security Features
-
-- **API Key Rotation**: Automatically rotates between multiple API keys
-- **Secure Storage**: All data stored locally in Chrome storage
-- **No External Dependencies**: Minimal external API calls
-- **Privacy First**: No user data collection or tracking
-
-## 🎨 Design Features
-
-- **Glassmorphism Effects**: Modern blur and transparency effects
-- **Smooth Animations**: Hover effects and transitions
-- **Professional Color Scheme**: Beautiful gradients and shadows
-- **Accessibility**: ARIA labels and focus states
-- **Responsive Layout**: Adapts to different screen sizes
+A modern Chrome extension with a secure backend API, built with **Turborepo** for optimal development experience.
 
 ## 📁 Project Structure
 
 ```
-src/
-├── background/          # Background script for extension logic
-├── components/          # Reusable React components
-├── contentScript/       # Content script for overlay functionality
-├── options/            # Extension options page
-├── popup/              # Main popup interface
-├── static/             # Static assets (icons, manifest)
-├── types/              # TypeScript type definitions
-└── utils/              # Utility functions and API calls
+weather-extension-monorepo/
+├── apps/
+│   ├── extension/          # Chrome Extension
+│   │   ├── src/
+│   │   │   ├── background/
+│   │   │   ├── components/
+│   │   │   ├── contentScript/
+│   │   │   ├── options/
+│   │   │   ├── popup/
+│   │   │   ├── static/
+│   │   │   ├── types/
+│   │   │   └── utils/
+│   │   ├── webpack.*.js
+│   │   └── package.json
+│   └── backend/            # Next.js API Server
+│       ├── src/app/api/
+│       │   ├── weather/route.ts
+│       │   └── geocode/route.ts
+│       ├── src/middleware.ts
+│       ├── env.example
+│       ├── SECURITY.md
+│       ├── test-api.js
+│       └── package.json
+├── turbo.json
+├── package.json
+└── README.md
 ```
 
-## 🔄 API Key Management
+## 🚀 Quick Start
 
-The extension supports multiple API keys for better reliability:
+### Prerequisites
 
-```typescript
-// In .env file
-OPEN_WEATHER_API_KEYS=key1,key2,key3
+- Node.js 18+
+- pnpm 8+
 
-// The extension automatically rotates between keys
+### Installation
+
+```bash
+# Install dependencies
+pnpm install
+
+# Set up environment variables
+cp apps/backend/env.example apps/backend/.env.local
+# Edit apps/backend/.env.local and add your OpenWeather API key
 ```
 
-## 🎯 Usage
+### Development
 
-1. **Add Cities**: Use the search bar to add your favorite cities
-2. **Set Default**: Click "Set as Default" on any city card
-3. **Auto-Location**: Use the location button to automatically set your current city
-4. **Overlay Mode**: Toggle the overlay button to show weather on any webpage
-5. **Temperature Units**: Click the temperature button to switch between °C and °F
-6. **Refresh Data**: Use the refresh button to get the latest weather information
+```bash
+# Start both extension and backend in development mode
+pnpm dev
 
-## 🐛 Troubleshooting
+# Or start them individually:
+pnpm extension:dev    # Extension development
+pnpm backend:dev      # Backend development
+```
 
-### Overlay Not Working
-- Make sure you have a default location set
-- Check that the webpage allows content scripts
-- Try refreshing the page and toggling the overlay again
+### Building
 
-### API Errors
-- Verify your API key is correct
-- Check your internet connection
-- Ensure you haven't exceeded API rate limits
+```bash
+# Build both apps
+pnpm build
 
-### Extension Not Loading
-- Check the Chrome console for errors
-- Verify all files are in the correct locations
-- Try reloading the extension
+# Or build individually:
+pnpm extension:build  # Build extension
+pnpm backend:build    # Build backend
+```
 
-## 🤝 Contributing
+## 🛠️ Available Scripts
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+### Root Level (Monorepo)
 
-## 📄 License
+```bash
+pnpm dev              # Start all apps in development
+pnpm build            # Build all apps
+pnpm lint             # Lint all apps
+pnpm clean            # Clean all builds
+pnpm test             # Run all tests
+pnpm format           # Format all code
+```
 
-This project is licensed under the MIT License.
+### Extension Specific
 
-## 🙏 Support
+```bash
+pnpm extension:dev    # Start extension development
+pnpm extension:build  # Build extension
+```
 
-If you find this extension helpful, consider buying me a coffee! ☕
+### Backend Specific
 
-[Buy Me a Coffee](https://buymeacoffee.com/tanzimhossain)
+```bash
+pnpm backend:dev      # Start backend development
+pnpm backend:build    # Build backend
+```
 
----
+## 🔧 Development Workflow
 
-**Made with ❤️ for the Chrome extension community**
+### 1. Extension Development
+
+```bash
+cd apps/extension
+pnpm dev              # Start webpack in watch mode
+```
+
+The extension will be built to `apps/extension/dist/`. Load this folder in Chrome:
+
+1. Open `chrome://extensions/`
+2. Enable "Developer mode"
+3. Click "Load unpacked"
+4. Select `apps/extension/dist/`
+
+### 2. Backend Development
+
+```bash
+cd apps/backend
+pnpm dev              # Start Next.js development server
+```
+
+The API will be available at:
+
+- `http://localhost:3000/api/weather`
+- `http://localhost:3000/api/geocode`
+
+### 3. Testing
+
+```bash
+# Test backend API
+cd apps/backend
+pnpm test
+
+# Test extension (after building)
+cd apps/extension
+pnpm build
+# Then load in Chrome and test manually
+```
+
+## 🔒 Security Features
+
+### Backend Security
+
+- ✅ **Rate limiting**: 60 requests/minute per IP
+- ✅ **Input validation**: Malicious character filtering
+- ✅ **Request timeout**: 10-second protection
+- ✅ **Security headers**: XSS, clickjacking protection
+- ✅ **CORS configuration**: Chrome extension support
+- ✅ **Error hiding**: No sensitive data exposed
+
+### Extension Security
+
+- ✅ **Input validation**: City names and coordinates
+- ✅ **Request timeout**: 10-second protection
+- ✅ **Retry logic**: Exponential backoff
+- ✅ **Response validation**: Structure checking
+- ✅ **Error handling**: User-friendly messages
+
+## 🌐 API Endpoints
+
+### Weather Data
+
+```
+GET /api/weather?city=London&units=metric
+```
+
+### Geocoding
+
+```
+GET /api/geocode?lat=51.51&lon=-0.13
+```
+
+## 🚀 Deployment
+
+### Backend (Vercel)
+
+```bash
+cd apps/backend
+vercel login
+vercel
+# Set OPEN_WEATHER_API_KEY in Vercel dashboard
+vercel --prod
+```
+
+### Extension (Chrome Web Store)
+
+1. Build the extension: `pnpm extension:build`
+2. Zip the `apps/extension/dist/` folder
+3. Upload to Chrome Web Store
+
+## 📋 Environment Variables
+
+### Backend (.env.local)
+
+```env
+OPEN_WEATHER_API_KEY=your_openweather_api_key_here
+```
+
+## 🧪 Testing
+
+### Backend Tests
+
+```bash
+cd apps/backend
+pnpm test
+```
+
+Tests include:
+
+- ✅ Basic functionality
+- ✅ Rate limiting
+- ✅ Input validation
+- ✅ Malicious input blocking
+- ✅ Large input rejection
+- ✅ Invalid coordinates
+- ✅ Timeout protection
+
+### Extension Testing
+
+1. Build: `pnpm extension:build`
+2. Load in Chrome
+3. Test all features manually
+
+## 🔧 Configuration
+
+### Turborepo Configuration
+
+- **Caching**: Enabled for all builds
+- **Parallel execution**: All tasks run in parallel
+- **Dependencies**: Proper task dependencies configured
+
+### Webpack Configuration
+
+- **Development**: Hot reloading enabled
+- **Production**: Optimized builds
+- **Environment variables**: Properly injected
+
+### Next.js Configuration
+
+- **API routes**: Properly configured
+- **Middleware**: Security middleware enabled
+- **Environment variables**: Server-side only
+
+## 📚 Documentation
+
+- `apps/backend/SECURITY.md` - Comprehensive security guide
+- `apps/backend/README.md` - Backend documentation
+- `apps/backend/DEPLOYMENT.md` - Deployment guide
+
+## 🎯 Benefits of Monorepo
+
+### ✅ **Unified Development**
+
+- Single command to start all services
+- Shared tooling and configurations
+- Consistent development experience
+
+### ✅ **Efficient Building**
+
+- Turborepo caching for faster builds
+- Parallel execution of tasks
+- Incremental builds
+
+### ✅ **Code Sharing**
+
+- Shared types and utilities
+- Consistent code style
+- Unified testing strategy
+
+### ✅ **Deployment**
+
+- Coordinated deployments
+- Shared environment variables
+- Unified CI/CD pipeline
+
+## 🆘 Troubleshooting
+
+### Common Issues
+
+1. **Extension not loading**
+   - Check webpack build output
+   - Verify manifest.json is copied
+   - Check Chrome extension errors
+
+2. **Backend not starting**
+   - Check environment variables
+   - Verify API key is set
+   - Check port 3000 is available
+
+3. **Build failures**
+   - Run `pnpm clean` to clear cache
+   - Check TypeScript errors
+   - Verify all dependencies installed
+
+### Development Tips
+
+1. **Use Turborepo commands**
+
+   ```bash
+   pnpm dev              # Start all apps
+   pnpm build            # Build all apps
+   pnpm lint             # Lint all code
+   ```
+
+2. **Monitor logs**
+   - Backend: Check terminal for API logs
+   - Extension: Check Chrome DevTools console
+
+3. **Hot reloading**
+   - Backend: Automatic with Next.js
+   - Extension: Manual reload in Chrome
+
+## 🎉 Success
+
+Your weather extension is now organized in a **professional monorepo** with:
+
+- ✅ **Turborepo** for efficient development
+- ✅ **Chrome Extension** with modern tooling
+- ✅ **Secure Backend API** with comprehensive security
+- ✅ **Unified development** experience
+- ✅ **Production ready** for deployment
+
+**Ready for Chrome Web Store publication!** 🚀

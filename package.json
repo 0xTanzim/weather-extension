@@ -1,37 +1,26 @@
 {
-  "name": "react-chrome-extension",
-  "version": "1.0.0",
-  "description": "react chrome extension template",
+  "name": "weather-extension-monorepo",
+  "version": "0.0.0",
+  "private": true,
   "scripts": {
-    "start": "webpack --watch --progress --config webpack.dev.js",
-    "build": "webpack --progress --config webpack.prod.js"
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean",
+    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "test": "turbo run test",
+    "extension:build": "turbo run build --filter=extension",
+    "extension:dev": "turbo run dev --filter=extension",
+    "backend:build": "turbo run build --filter=backend",
+    "backend:dev": "turbo run dev --filter=backend"
   },
-  "author": "",
   "devDependencies": {
-    "@types/chrome": "^0.1.1",
-    "@types/node": "^24.1.0",
-    "@types/react": "^19.1.8",
-    "@types/react-dom": "^19.1.6",
-    "clean-webpack-plugin": "^4.0.0",
-    "copy-webpack-plugin": "^13.0.0",
-    "css-loader": "^7.1.2",
-    "dotenv": "^17.2.1",
-    "html-webpack-plugin": "^5.6.3",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "style-loader": "^4.0.0",
-    "terser-webpack-plugin": "^5.3.14",
-    "ts-loader": "^9.5.2",
-    "typescript": "^5.8.3",
-    "webpack": "^5.100.2",
-    "webpack-cli": "^6.0.1",
-    "webpack-merge": "^6.0.1"
+    "@turbo/gen": "^1.12.4",
+    "prettier": "^3.2.5",
+    "turbo": "^1.12.4"
   },
-  "dependencies": {
-    "@emotion/react": "^11.14.0",
-    "@emotion/styled": "^11.14.1",
-    "@fontsource/roboto": "^5.2.6",
-    "@mui/icons-material": "^7.2.0",
-    "@mui/material": "^7.2.0"
+  "packageManager": "pnpm@10.13.1",
+  "engines": {
+    "node": ">=18.0.0"
   }
-}
+} 
