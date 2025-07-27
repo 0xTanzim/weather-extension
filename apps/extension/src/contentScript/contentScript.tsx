@@ -1,6 +1,6 @@
 import CloseIcon from '@mui/icons-material/Close';
 import { Box, IconButton, Typography } from '@mui/material';
-import React, { useRef, useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import WeatherCard from '../components/WeatherCard';
@@ -33,14 +33,14 @@ const Overlay: React.FC<{
       if (isDragging.current && overlayRef.current) {
         const deltaX = e.clientX - dragStart.current.x;
         const deltaY = e.clientY - dragStart.current.y;
-        
+
         const rect = overlayRef.current.getBoundingClientRect();
         const newLeft = rect.left + deltaX;
         const newTop = rect.top + deltaY;
-        
+
         overlayRef.current.style.left = `${newLeft}px`;
         overlayRef.current.style.top = `${newTop}px`;
-        
+
         dragStart.current = { x: e.clientX, y: e.clientY };
       }
     };
@@ -124,7 +124,6 @@ function removeOverlay() {
 
 function setupListener() {
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    console.log('Content script received message:', msg);
     if (msg === Messages.TOGGLE_OVERLAY) {
       const existing = document.getElementById(OVERLAY_ID);
       if (existing) {
@@ -155,6 +154,8 @@ getStoredOptions()
       mountOverlay(options);
     }
   })
-  .catch(console.error);
+  .catch((error) => {
+    console.error('Error in content script initialization:', error);
+  });
 
 setupListener();

@@ -30,16 +30,16 @@ const SECURITY_CONFIG = {
 
 // Request logging
 function logRequest(request: NextRequest, response: NextResponse) {
-  const ip = request.headers.get('x-forwarded-for') || 
-             request.headers.get('x-real-ip') || 
-             request.headers.get('cf-connecting-ip') || 
+  const ip = request.headers.get('x-forwarded-for') ||
+             request.headers.get('x-real-ip') ||
+             request.headers.get('cf-connecting-ip') ||
              'unknown';
-  
+
   const userAgent = request.headers.get('user-agent') || 'unknown';
   const method = request.method;
   const url = request.url;
   const status = response.status;
-  
+
   console.log(`[${new Date().toISOString()}] ${ip} ${method} ${url} ${status} "${userAgent}"`);
 }
 
@@ -47,7 +47,7 @@ function logRequest(request: NextRequest, response: NextResponse) {
 function isAllowedOrigin(request: NextRequest): boolean {
   const origin = request.headers.get('origin');
   if (!origin) return true; // Allow requests without origin (same-origin)
-  
+
   return SECURITY_CONFIG.ALLOWED_ORIGINS.some(pattern => {
     if (pattern.includes('*')) {
       const regex = new RegExp(pattern.replace('*', '.*'));
@@ -67,71 +67,85 @@ function isSuspiciousUserAgent(request: NextRequest): boolean {
 function isRequestTooLarge(request: NextRequest): boolean {
   const contentLength = request.headers.get('content-length');
   if (!contentLength) return false;
-  
+
   const size = parseInt(contentLength, 10);
   return size > SECURITY_CONFIG.MAX_REQUEST_SIZE;
 }
 
 export function middleware(request: NextRequest) {
   const startTime = Date.now();
-  
+
   // Get client IP
-  const ip = request.headers.get('x-forwarded-for') || 
-             request.headers.get('x-real-ip') || 
-             request.headers.get('cf-connecting-ip') || 
+  const ip = request.headers.get('x-forwarded-for') ||
+             request.headers.get('x-real-ip') ||
+             request.headers.get('cf-connecting-ip') ||
              'unknown';
-  
+
+  // Handle preflight OPTIONS requests for CORS
+  if (request.method === 'OPTIONS') {
+    const response = new NextResponse(null, { status: 200 });
+    response.headers.set('Access-Control-Allow-Origin', '*');
+    response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    response.headers.set('Access-Control-Max-Age', '86400');
+    return response;
+  }
+
   // Block known malicious IPs
   if (SECURITY_CONFIG.BLOCKED_IPS.has(ip)) {
     console.log(`Blocked request from known malicious IP: ${ip}`);
     return new NextResponse(
       JSON.stringify({ error: 'Access denied' }),
-      { 
+      {
         status: 403,
         headers: { 'Content-Type': 'application/json' }
       }
     );
   }
-  
+
   // Block suspicious user agents
   if (isSuspiciousUserAgent(request)) {
     console.log(`Blocked request with suspicious user agent: ${request.headers.get('user-agent')}`);
     return new NextResponse(
       JSON.stringify({ error: 'Access denied' }),
-      { 
+      {
         status: 403,
         headers: { 'Content-Type': 'application/json' }
       }
     );
   }
-  
+
   // Check request size
   if (isRequestTooLarge(request)) {
     console.log(`Blocked oversized request from: ${ip}`);
     return new NextResponse(
       JSON.stringify({ error: 'Request too large' }),
-      { 
+      {
         status: 413,
         headers: { 'Content-Type': 'application/json' }
       }
     );
   }
-  
-  // Check origin for CORS
-  if (!isAllowedOrigin(request)) {
-    console.log(`Blocked request from unauthorized origin: ${request.headers.get('origin')}`);
+
+  // Check origin for CORS (but be more permissive for Chrome extensions)
+  const origin = request.headers.get('origin');
+  const isChromeExtension = origin && origin.startsWith('chrome-extension://');
+  const isLocalhost = origin && (origin.includes('localhost') || origin.includes('127.0.0.1'));
+
+  if (!isChromeExtension && !isLocalhost && origin && !isAllowedOrigin(request)) {
+    console.log(`Blocked request from unauthorized origin: ${origin}`);
     return new NextResponse(
       JSON.stringify({ error: 'Unauthorized origin' }),
-      { 
+      {
         status: 403,
         headers: { 'Content-Type': 'application/json' }
       }
     );
   }
-  
+
   // Continue with the request
   const response = NextResponse.next();
-  
+
   // Add security headers
   response.headers.set('X-Content-Type-Options', 'nosniff');
   response.headers.set('X-Frame-Options', 'DENY');
@@ -139,17 +153,18 @@ export function middleware(request: NextRequest) {
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   response.headers.set('Permissions-Policy', 'geolocation=()');
   response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-  
+
   // Add CORS headers for API routes
   if (request.nextUrl.pathname.startsWith('/api/')) {
     response.headers.set('Access-Control-Allow-Origin', '*');
-    response.headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    response.headers.set('Access-Control-Max-Age', '86400');
   }
-  
+
   // Log the request
   logRequest(request, response);
-  
+
   return response;
 }
 
@@ -163,4 +178,4 @@ export const config = {
      */
     '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
-}; 
+};

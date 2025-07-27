@@ -1,7 +1,7 @@
 import { OpenWeatherData, OpenWeatherTempScale } from '../types/open_weather';
 
 // Your Vercel backend URL - replace with your actual URL after deployment
-const BACKEND_URL = 'https://your-weather-api.vercel.app'; // You'll get this after deploying
+const BACKEND_URL = 'https://weather-extentions-backend.vercel.app';
 
 // Security configuration
 const SECURITY_CONFIG = {
@@ -92,7 +92,7 @@ async function fetchWithRetry(url: string, options: RequestInit = {}): Promise<R
       return await secureFetch(url, options);
     } catch (error) {
       lastError = error as Error;
-      
+
       if (attempt === SECURITY_CONFIG.MAX_RETRIES) {
         throw lastError;
       }
@@ -122,42 +122,42 @@ export const getWeatherData = async (
     }
 
     const sanitizedCity = cityValidation.sanitized!;
-    
+
     // Construct URL with proper encoding
     const url = new URL(`${BACKEND_URL}/api/weather`);
     url.searchParams.set('city', sanitizedCity);
     url.searchParams.set('units', tempScale);
 
     const response = await fetchWithRetry(url.toString());
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      
-      // Handle specific error cases
+
+      // Handle specific error cases with user-friendly messages
       if (response.status === 429) {
-        throw new Error('Rate limit exceeded. Please try again later.');
+        throw new Error('Too many requests. Please try again later.');
       }
-      
+
       if (response.status === 400) {
         throw new Error(errorData.error || 'Invalid request');
       }
-      
+
       if (response.status === 404) {
-        throw new Error('City not found');
+        throw new Error(`City "${sanitizedCity}" not found. Please check the spelling.`);
       }
-      
+
       if (response.status >= 500) {
-        throw new Error('Server error. Please try again later.');
+        throw new Error('Service temporarily unavailable. Please try again later.');
       }
-      
-      throw new Error(errorData.error || `Failed to fetch weather data: ${response.status}`);
+
+      throw new Error(errorData.error || `Failed to fetch weather data (${response.status})`);
     }
-    
+
     const data = await response.json();
-    
+
     // Validate response structure
     if (!data || typeof data !== 'object') {
-      throw new Error('Invalid response from server');
+      throw new Error('Invalid response from weather service');
     }
 
     // Check for required fields
@@ -167,7 +167,10 @@ export const getWeatherData = async (
 
     return data;
   } catch (error) {
-    console.error('Error fetching weather data:', error);
+    // Only log critical errors, not user-facing ones
+    if (error instanceof Error && !error.message.includes('City') && !error.message.includes('not found')) {
+      console.error('Weather API error:', error);
+    }
     throw error;
   }
 };
@@ -188,7 +191,6 @@ export const getCityNameFromCoords = async (lat: number, lon: number): Promise<s
     // Input validation
     const coordValidation = validateCoordinates(lat, lon);
     if (!coordValidation.valid) {
-      console.error('Invalid coordinates:', coordValidation.error);
       return null;
     }
 
@@ -196,37 +198,36 @@ export const getCityNameFromCoords = async (lat: number, lon: number): Promise<s
     const url = new URL(`${BACKEND_URL}/api/geocode`);
     url.searchParams.set('lat', lat.toString());
     url.searchParams.set('lon', lon.toString());
-    
+
     const response = await fetchWithRetry(url.toString());
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      
+
       if (response.status === 429) {
-        console.error('Rate limit exceeded for geocoding');
         return null;
       }
-      
+
       if (response.status === 404) {
-        console.error('Location not found for coordinates');
         return null;
       }
-      
-      console.error('Geocoding failed:', errorData.error || response.status);
+
       return null;
     }
-    
+
     const data = await response.json();
-    
+
     // Validate response structure
     if (!data || typeof data !== 'object') {
-      console.error('Invalid geocoding response');
       return null;
     }
 
     return data.city || null;
   } catch (error) {
-    console.error('Error getting city name from coordinates:', error);
+    // Only log critical errors
+    if (error instanceof Error && !error.message.includes('timeout')) {
+      console.error('Geocoding error:', error);
+    }
     return null;
   }
 };

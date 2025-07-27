@@ -6,17 +6,11 @@ const webpack = require('webpack');
 const dotenv = require('dotenv');
 dotenv.config();
 
-// Debug environment variables
-console.log('🔍 Environment variables check:');
-console.log('OPEN_WEATHER_API_KEY:', process.env.OPEN_WEATHER_API_KEY ? '✅ Found' : '❌ Not found');
-console.log('OPEN_WEATHER_API_KEYS:', process.env.OPEN_WEATHER_API_KEYS ? '✅ Found' : '❌ Not found');
 
 // Ensure environment variables are properly loaded
 const apiKey = process.env.OPEN_WEATHER_API_KEY || '';
 const apiKeys = process.env.OPEN_WEATHER_API_KEYS || '';
 
-console.log('🔑 API Key length:', apiKey.length);
-console.log('🔑 API Keys length:', apiKeys.length);
 
 module.exports = {
   entry: {

@@ -1,21 +1,21 @@
 import {
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Switch,
-  TextField,
-  Typography,
-  Alert,
-  Snackbar,
-  Stack,
+    Alert,
+    Box,
+    Button,
+    Card,
+    CardContent,
+    Snackbar,
+    Stack,
+    Switch,
+    TextField,
+    Typography,
 } from '@mui/material';
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
-  getStoredOptions,
-  LocalStorageOptions,
-  setStoreOptions,
+    getStoredOptions,
+    LocalStorageOptions,
+    setStoreOptions,
 } from '../utils/storage';
 import './options.css';
 
@@ -27,7 +27,11 @@ const OptionApp: React.FC<{}> = () => {
   const [showSuccess, setShowSuccess] = useState(false);
 
   useEffect(() => {
-    getStoredOptions().then((options) => setOptions(options));
+    getStoredOptions().then((options) => {
+      if (options) {
+        setOptions(options);
+      }
+    });
   }, []);
 
   const handleHomeCityChange = (homeCity: string) => {
@@ -53,7 +57,7 @@ const OptionApp: React.FC<{}> = () => {
 
   const handleSaveButtonClick = () => {
     if (!options) return;
-    
+
     setFormState('saving');
     setStoreOptions(options).then(() => {
       setFormState('ready');
@@ -69,7 +73,7 @@ const OptionApp: React.FC<{}> = () => {
 
   if (!options) {
     return (
-      <Box sx={{ 
+      <Box sx={{
         minHeight: '100vh',
         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
         display: 'flex',
@@ -86,23 +90,23 @@ const OptionApp: React.FC<{}> = () => {
   const isFieldsDisabled = formState === 'saving';
 
   return (
-    <Box sx={{ 
-      minHeight: '100vh', 
+    <Box sx={{
+      minHeight: '100vh',
       background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
       py: 4,
       px: 2
     }}>
       <Box maxWidth="700px" mx="auto">
-        <Card elevation={12} sx={{ 
-          borderRadius: 4, 
+        <Card elevation={12} sx={{
+          borderRadius: 4,
           overflow: 'hidden',
           background: 'rgba(255, 255, 255, 0.95)',
           backdropFilter: 'blur(10px)',
           border: '1px solid rgba(255, 255, 255, 0.2)'
         }}>
           <CardContent sx={{ p: 5 }}>
-            <Typography variant="h3" gutterBottom sx={{ 
-              fontWeight: 700, 
+            <Typography variant="h3" gutterBottom sx={{
+              fontWeight: 700,
               color: '#2c3e50',
               mb: 4,
               textAlign: 'center',
@@ -130,7 +134,7 @@ const OptionApp: React.FC<{}> = () => {
                   value={options.homeCity}
                   onChange={(e) => handleHomeCityChange(e.target.value)}
                   disabled={isFieldsDisabled}
-                  sx={{ 
+                  sx={{
                     '& .MuiOutlinedInput-root': {
                       borderRadius: 2,
                       '&:hover fieldset': {
@@ -178,9 +182,9 @@ const OptionApp: React.FC<{}> = () => {
                   size="large"
                   onClick={handleSaveButtonClick}
                   disabled={isFieldsDisabled}
-                  sx={{ 
-                    px: 6, 
-                    py: 2, 
+                  sx={{
+                    px: 6,
+                    py: 2,
                     borderRadius: 3,
                     fontSize: '1.1rem',
                     fontWeight: 600,
@@ -210,10 +214,10 @@ const OptionApp: React.FC<{}> = () => {
         onClose={() => setShowSuccess(false)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
-        <Alert 
-          onClose={() => setShowSuccess(false)} 
-          severity="success" 
-          sx={{ 
+        <Alert
+          onClose={() => setShowSuccess(false)}
+          severity="success"
+          sx={{
             width: '100%',
             borderRadius: 2,
             '& .MuiAlert-icon': {

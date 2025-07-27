@@ -8,26 +8,26 @@ import Typography from '@mui/material/Typography';
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
-  getStoredCities,
-  getStoredOptions,
-  LocalStorageOptions,
-  setStoredCities,
-  setStoreOptions,
+    getStoredCities,
+    getStoredOptions,
+    LocalStorageOptions,
+    setStoredCities,
+    setStoreOptions,
 } from '../utils/storage';
 
 import { PictureInPicture } from '@mui/icons-material';
+import CoffeeIcon from '@mui/icons-material/Coffee';
+import LocationOnIcon from '@mui/icons-material/LocationOn';
+import MyLocationIcon from '@mui/icons-material/MyLocation';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import SearchIcon from '@mui/icons-material/Search';
+import { Stack } from '@mui/material';
+import Button from '@mui/material/Button';
 import WeatherCard from '../components/WeatherCard';
+import { OpenWeatherTempScale } from '../types';
+import { getCityNameFromCoords, getWeatherData } from '../utils/api';
 import { Messages } from '../utils/messages';
 import './popup.css';
-import MyLocationIcon from '@mui/icons-material/MyLocation';
-import { getCityNameFromCoords, getWeatherData } from '../utils/api';
-import { OpenWeatherTempScale } from '../types';
-import CoffeeIcon from '@mui/icons-material/Coffee';
-import Button from '@mui/material/Button';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import LocationOnIcon from '@mui/icons-material/LocationOn';
-import SearchIcon from '@mui/icons-material/Search';
-import { Stack, Divider } from '@mui/material';
 
 const PopupApp: React.FC<{}> = () => {
   const [cities, setCities] = useState<string[]>([]);
@@ -48,7 +48,6 @@ const PopupApp: React.FC<{}> = () => {
         .then(() => {
           setCities(updatedCities);
           setNewCity('');
-          console.log('Cities updated successfully:', updatedCities);
         })
         .catch((error) => {
           console.error('Error updating cities:', error);
@@ -63,7 +62,6 @@ const PopupApp: React.FC<{}> = () => {
     setStoredCities(updatedCities)
       .then(() => {
         setCities(updatedCities);
-        console.log('City deleted successfully:', updatedCities);
       })
       .catch((error) => {
         console.error('Error deleting city:', error);
@@ -75,10 +73,10 @@ const PopupApp: React.FC<{}> = () => {
       getStoredCities(),
       getStoredOptions()
     ]).then(([storedCities, storedOptions]) => {
-      console.log('Loaded cities:', storedCities);
-      console.log('Loaded options:', storedOptions);
       setCities(storedCities || []);
-      setOptions(storedOptions);
+      if (storedOptions) {
+        setOptions(storedOptions);
+      }
     }).catch((error) => {
       console.error('Error loading data:', error);
     });
@@ -97,7 +95,6 @@ const PopupApp: React.FC<{}> = () => {
     setStoreOptions(updateOptions)
       .then(() => {
         setOptions(updateOptions);
-        console.log('Temperature scale updated successfully');
       })
       .catch((error) => {
         console.error('Error updating temperature scale:', error);
@@ -108,31 +105,27 @@ const PopupApp: React.FC<{}> = () => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs[0];
       if (!tab?.id || !/^https?:\/\//.test(tab.url || '')) {
-        console.warn('Cannot inject content script on this page type');
         return;
       }
-      
+
       chrome.tabs.sendMessage(tab.id, Messages.TOGGLE_OVERLAY, (response) => {
         if (chrome.runtime.lastError) {
-          console.warn('Content script not available:', chrome.runtime.lastError.message);
           chrome.scripting.executeScript({
-            target: { tabId: tab.id },
+            target: { tabId: tab.id! },
             files: ['contentScript.js']
           }).then(() => {
             setTimeout(() => {
-              chrome.tabs.sendMessage(tab.id!, Messages.TOGGLE_OVERLAY, (retryResponse) => {
-                if (chrome.runtime.lastError) {
-                  console.error('Still failed after injection:', chrome.runtime.lastError.message);
-                } else {
-                  console.log('Overlay toggled after injection:', retryResponse);
-                }
-              });
+              if (tab.id) {
+                chrome.tabs.sendMessage(tab.id, Messages.TOGGLE_OVERLAY, (retryResponse) => {
+                  if (chrome.runtime.lastError) {
+                    console.error('Failed to toggle overlay:', chrome.runtime.lastError.message);
+                  }
+                });
+              }
             }, 100);
           }).catch((error) => {
             console.error('Failed to inject content script:', error);
           });
-        } else {
-          console.log('Overlay toggled successfully:', response);
         }
       });
     });
@@ -190,33 +183,33 @@ const PopupApp: React.FC<{}> = () => {
   };
 
   return (
-    <Box sx={{ 
-      width: '450px', 
+    <Box sx={{
+      width: '450px',
       minHeight: '600px',
       background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
       color: 'white',
       fontFamily: 'Roboto, sans-serif'
     }}>
       {/* Header */}
-      <Box sx={{ 
-        p: 3, 
+      <Box sx={{
+        p: 3,
         pb: 2,
         background: 'rgba(255, 255, 255, 0.1)',
         backdropFilter: 'blur(10px)',
         borderBottom: '1px solid rgba(255, 255, 255, 0.2)'
       }}>
-        <Typography variant="h5" sx={{ 
-          fontWeight: 600, 
+        <Typography variant="h5" sx={{
+          fontWeight: 600,
           mb: 2,
           textAlign: 'center',
           textShadow: '0 2px 4px rgba(0,0,0,0.3)'
         }}>
           🌤️ Weather Extension
         </Typography>
-        
+
         {/* Search Bar */}
-        <Paper elevation={3} sx={{ 
-          borderRadius: 3, 
+        <Paper elevation={3} sx={{
+          borderRadius: 3,
           overflow: 'hidden',
           background: 'rgba(255, 255, 255, 0.95)',
           mb: 2
@@ -235,9 +228,9 @@ const PopupApp: React.FC<{}> = () => {
               }}
               sx={{ flex: 1, color: '#333' }}
             />
-            <IconButton 
-              onClick={handleCityButtonClick} 
-              sx={{ 
+            <IconButton
+              onClick={handleCityButtonClick}
+              sx={{
                 ml: 1,
                 color: '#667eea',
                 '&:hover': { backgroundColor: 'rgba(102, 126, 234, 0.1)' }
@@ -250,9 +243,9 @@ const PopupApp: React.FC<{}> = () => {
 
         {/* Action Buttons */}
         <Stack direction="row" spacing={1} justifyContent="center">
-          <IconButton 
-            onClick={handleTempScaleButtonClick} 
-            sx={{ 
+          <IconButton
+            onClick={handleTempScaleButtonClick}
+            sx={{
               bgcolor: 'rgba(255, 255, 255, 0.2)',
               color: 'white',
               '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.3)' }
@@ -261,9 +254,9 @@ const PopupApp: React.FC<{}> = () => {
           >
             {options.tempScale === 'metric' ? '°C' : '°F'}
           </IconButton>
-          <IconButton 
-            onClick={handleOverlayToggle} 
-            sx={{ 
+          <IconButton
+            onClick={handleOverlayToggle}
+            sx={{
               bgcolor: 'rgba(255, 255, 255, 0.2)',
               color: 'white',
               '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.3)' }
@@ -272,10 +265,10 @@ const PopupApp: React.FC<{}> = () => {
           >
             <PictureInPicture />
           </IconButton>
-          <IconButton 
-            onClick={handleAutoLocation} 
-            disabled={isLocating} 
-            sx={{ 
+          <IconButton
+            onClick={handleAutoLocation}
+            disabled={isLocating}
+            sx={{
               bgcolor: 'rgba(255, 255, 255, 0.2)',
               color: 'white',
               '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.3)' },
@@ -285,10 +278,10 @@ const PopupApp: React.FC<{}> = () => {
           >
             <MyLocationIcon />
           </IconButton>
-          <IconButton 
-            onClick={handleRefresh} 
+          <IconButton
+            onClick={handleRefresh}
             disabled={isRefreshing}
-            sx={{ 
+            sx={{
               bgcolor: 'rgba(255, 255, 255, 0.2)',
               color: 'white',
               '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.3)' },
@@ -308,7 +301,7 @@ const PopupApp: React.FC<{}> = () => {
           <Box mb={3}>
             <Box display="flex" alignItems="center" mb={1}>
               <LocationOnIcon sx={{ mr: 1, color: '#FFD700' }} />
-              <Typography variant="subtitle1" sx={{ 
+              <Typography variant="subtitle1" sx={{
                 fontWeight: 600,
                 color: '#FFD700',
                 textShadow: '0 1px 2px rgba(0,0,0,0.3)'
@@ -323,7 +316,7 @@ const PopupApp: React.FC<{}> = () => {
         {/* User Cities */}
         {cities.length > 0 && (
           <Box mb={3}>
-            <Typography variant="h6" sx={{ 
+            <Typography variant="h6" sx={{
               mb: 2,
               fontWeight: 600,
               textShadow: '0 1px 2px rgba(0,0,0,0.3)'
@@ -356,7 +349,7 @@ const PopupApp: React.FC<{}> = () => {
       </Box>
 
       {/* Footer */}
-      <Box sx={{ 
+      <Box sx={{
         mt: 'auto',
         p: 3,
         pt: 2,

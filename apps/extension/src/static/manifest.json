@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/chrome-manifest",
-  "name": "React Extension",
-  "description": "Chrome Extension in React!",
+  "name": "Weather Extension - Real-time Weather Updates",
+  "description": "Get real-time weather information for any city with a beautiful, modern interface.",
   "version": "1.0.0",
   "manifest_version": 3,
   "icons": {
@@ -11,7 +11,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "React Extension",
+    "default_title": "Weather Extension",
     "default_icon": "icon.png"
   },
   "permissions": ["storage", "contextMenus", "alarms", "scripting", "geolocation", "activeTab"],
@@ -28,5 +28,7 @@
       "js": ["contentScript.js"],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "author": "Tanzim",
+  "homepage_url": "https://github.com/0xTanzim/weather-extension"
 }

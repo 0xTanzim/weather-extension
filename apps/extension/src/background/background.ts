@@ -1,9 +1,9 @@
 import { getWeatherData } from '../utils/api';
 import {
-  getStoredCities,
-  getStoredOptions,
-  setStoredCities,
-  setStoreOptions,
+    getStoredCities,
+    getStoredOptions,
+    setStoredCities,
+    setStoreOptions,
 } from '../utils/storage';
 
 /**
@@ -11,17 +11,14 @@ import {
  * Initializes the extension, sets up context menus, and handles alarms.
  */
 chrome.runtime.onInstalled.addListener(async () => {
-  console.log('Weather extension installed/updated');
-  
   try {
     // Initialize storage with default values
     await setStoredCities([]);
-    await setStoreOptions({ 
-      tempScale: 'metric', 
-      homeCity: '', 
-      hasAutoOverlay: false 
+    await setStoreOptions({
+      tempScale: 'metric',
+      homeCity: '',
+      hasAutoOverlay: false
     });
-    console.log('Storage initialized successfully');
 
     // Create context menu
     chrome.contextMenus.create({
@@ -31,8 +28,6 @@ chrome.runtime.onInstalled.addListener(async () => {
     }, () => {
       if (chrome.runtime.lastError) {
         console.error('Failed to create context menu:', chrome.runtime.lastError);
-      } else {
-        console.log('Context menu created successfully');
       }
     });
 
@@ -40,7 +35,6 @@ chrome.runtime.onInstalled.addListener(async () => {
     chrome.alarms.create('weatherUpdate', {
       periodInMinutes: 60,
     });
-    console.log('Weather update alarm created');
   } catch (error) {
     console.error('Error during extension initialization:', error);
   }
@@ -52,11 +46,7 @@ chrome.contextMenus.onClicked.addListener(async (event) => {
     if (event.menuItemId === 'addCityFromSelection' && event.selectionText) {
       const newCity = event.selectionText.trim();
       if (!cities.includes(newCity)) {
-        console.log('Adding new city from selection:', newCity);
         await setStoredCities([...cities, newCity]);
-        console.log('City added successfully');
-      } else {
-        console.log('City already exists:', newCity);
       }
     }
   } catch (error) {
@@ -69,7 +59,6 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     try {
       const options = await getStoredOptions();
       if (!options || options.homeCity === '') {
-        console.log('No home city set, skipping weather update');
         return;
       }
 
@@ -78,15 +67,13 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         const tempText = `${Math.round(data.main.temp)}°${
           options.tempScale === 'metric' ? 'C' : 'F'
         }`;
-        
+
         chrome.action.setBadgeText({
           text: tempText,
         });
-        console.log('Weather badge updated:', tempText);
       }
     } catch (error) {
       console.error('Error updating weather badge:', error);
     }
   }
 });
-

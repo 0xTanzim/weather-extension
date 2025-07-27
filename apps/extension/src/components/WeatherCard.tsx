@@ -1,11 +1,10 @@
-import { Box, Button, CardActions, Typography } from '@mui/material';
+import { Box, Button, CardActions, Stack, Typography } from '@mui/material';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import React, { useEffect } from 'react';
 import { OpenWeatherData, OpenWeatherTempScale } from '../types';
 import { getWeatherData, getWeatherIconUrl } from '../utils/api';
 import './weatherCard.css';
-import { Stack } from '@mui/material';
 
 const WeatherCardContainer: React.FC<{
   children: React.ReactNode;
@@ -15,18 +14,18 @@ const WeatherCardContainer: React.FC<{
   overlayMode?: boolean;
 }> = ({ children, onDelete, onSetDefault, isDefault, overlayMode }) => {
   const containerClass = `weatherCard-container ${overlayMode ? 'overlay' : ''} ${isDefault ? 'weatherCard-default' : ''}`;
-  
+
   return (
     <Box className={containerClass}>
       <Card elevation={0} sx={{ boxShadow: 'none', background: 'transparent' }}>
         <CardContent sx={{ p: 0 }}>{children}</CardContent>
         <CardActions className="weatherCard-actions">
           {onSetDefault && !isDefault && (
-            <Button 
-              onClick={onSetDefault} 
-              color="primary" 
-              size="small" 
-              variant="outlined" 
+            <Button
+              onClick={onSetDefault}
+              color="primary"
+              size="small"
+              variant="outlined"
               className="weatherCard-button"
               sx={{ mr: 1 }}
             >
@@ -34,9 +33,9 @@ const WeatherCardContainer: React.FC<{
             </Button>
           )}
           {onDelete && (
-            <Button 
-              onClick={onDelete} 
-              color="error" 
+            <Button
+              onClick={onDelete}
+              color="error"
               size="small"
               className="weatherCard-button"
             >
@@ -70,10 +69,12 @@ const WeatherCard = ({
     null
   );
   const [cardState, setCardState] = React.useState<WeatherCardState>('loading');
+  const [errorMessage, setErrorMessage] = React.useState<string>('');
 
   useEffect(() => {
     setCardState('loading');
     setWeatherData(null);
+    setErrorMessage('');
     getWeatherData(city, tempScale)
       .then((data) => {
         setWeatherData(data);
@@ -81,6 +82,7 @@ const WeatherCard = ({
       })
       .catch((error) => {
         setCardState('error');
+        setErrorMessage(error instanceof Error ? error.message : 'Unknown error');
       });
   }, [city, tempScale]);
 
@@ -88,9 +90,9 @@ const WeatherCard = ({
     return (
       <WeatherCardContainer overlayMode={overlayMode}>
         <Box className="weatherCard-loading">
-          <img 
-            src={getWeatherIconUrl('10d')} 
-            alt="Loading" 
+          <img
+            src={getWeatherIconUrl('10d')}
+            alt="Loading"
             className="weatherCard-loading-icon"
           />
           <Typography className="weatherCard-body" mt={2}>Loading...</Typography>
@@ -98,39 +100,39 @@ const WeatherCard = ({
       </WeatherCardContainer>
     );
   }
-  
+
   if (cardState === 'error') {
     return (
       <WeatherCardContainer overlayMode={overlayMode} onDelete={onDelete}>
         <Box className="weatherCard-error">
           <Typography className="weatherCard-title">{city}</Typography>
           <Typography className="weatherCard-body">
-            Error fetching weather data for {city}
+            {errorMessage || `Error fetching weather data for ${city}`}
           </Typography>
         </Box>
       </WeatherCardContainer>
     );
   }
-  
+
   return (
-    <WeatherCardContainer 
-      onDelete={onDelete} 
-      onSetDefault={onSetDefault} 
-      isDefault={isDefault} 
+    <WeatherCardContainer
+      onDelete={onDelete}
+      onSetDefault={onSetDefault}
+      isDefault={isDefault}
       overlayMode={overlayMode}
     >
       {weatherData && (
         <Box display="flex" flexDirection="row" alignItems="center" justifyContent="space-between" sx={{ minHeight: overlayMode ? '100px' : 'auto' }}>
           <Box flex={1} minWidth={0} pr={2}>
-            <Typography 
-              className="weatherCard-title" 
-              sx={{ fontSize: overlayMode ? 16 : 20 }} 
+            <Typography
+              className="weatherCard-title"
+              sx={{ fontSize: overlayMode ? 16 : 20 }}
               noWrap
             >
               {city.charAt(0).toUpperCase() + city.slice(1)}
             </Typography>
             <Stack spacing={1}>
-              <Typography 
+              <Typography
                 className="weatherCard-temperature"
                 sx={{ fontSize: overlayMode ? 20 : 24 }}
               >
