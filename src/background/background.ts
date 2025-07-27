@@ -10,52 +10,83 @@ import {
  * Background script for the weather extension.
  * Initializes the extension, sets up context menus, and handles alarms.
  */
-chrome.runtime.onInstalled.addListener(() => {
-  setStoredCities([]);
-  setStoreOptions({ tempScale: 'metric', homeCity: '', hasAutoOverlay: false });
-
-  chrome.contextMenus.create({
-    contexts: ['selection'],
-    title: 'Add selected text as city',
-    id: 'addCityFromSelection',
-  });
-
-
+chrome.runtime.onInstalled.addListener(async () => {
+  console.log('Weather extension installed/updated');
   
+  try {
+    // Initialize storage with default values
+    await setStoredCities([]);
+    await setStoreOptions({ 
+      tempScale: 'metric', 
+      homeCity: '', 
+      hasAutoOverlay: false 
+    });
+    console.log('Storage initialized successfully');
 
-  chrome.alarms.create({
-    periodInMinutes: 60,
-  });
+    // Create context menu
+    chrome.contextMenus.create({
+      contexts: ['selection'],
+      title: 'Add selected text as city',
+      id: 'addCityFromSelection',
+    }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('Failed to create context menu:', chrome.runtime.lastError);
+      } else {
+        console.log('Context menu created successfully');
+      }
+    });
+
+    // Create alarm for weather updates
+    chrome.alarms.create('weatherUpdate', {
+      periodInMinutes: 60,
+    });
+    console.log('Weather update alarm created');
+  } catch (error) {
+    console.error('Error during extension initialization:', error);
+  }
 });
 
-chrome.contextMenus.onClicked.addListener((event) => {
-  getStoredCities().then((cities) => {
+chrome.contextMenus.onClicked.addListener(async (event) => {
+  try {
+    const cities = await getStoredCities();
     if (event.menuItemId === 'addCityFromSelection' && event.selectionText) {
       const newCity = event.selectionText.trim();
       if (!cities.includes(newCity)) {
         console.log('Adding new city from selection:', newCity);
-        return setStoredCities([...cities, newCity]);
+        await setStoredCities([...cities, newCity]);
+        console.log('City added successfully');
+      } else {
+        console.log('City already exists:', newCity);
       }
     }
-    return Promise.resolve();
-  });
+  } catch (error) {
+    console.error('Error handling context menu click:', error);
+  }
 });
 
-chrome.alarms.onAlarm.addListener(() => {
-  getStoredOptions().then((options) => {
-    if (options.homeCity === '') {
-      console.warn('Home city is not set. Please set it in the options.');
-      return;
-    }
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === 'weatherUpdate') {
+    try {
+      const options = await getStoredOptions();
+      if (!options || options.homeCity === '') {
+        console.log('No home city set, skipping weather update');
+        return;
+      }
 
-    getWeatherData(options.homeCity, options.tempScale).then((data) => {
+      const data = await getWeatherData(options.homeCity, options.tempScale);
       if (data) {
+        const tempText = `${Math.round(data.main.temp)}°${
+          options.tempScale === 'metric' ? 'C' : 'F'
+        }`;
+        
         chrome.action.setBadgeText({
-          text: `${Math.round(data.main.temp)}°${
-            options.tempScale === 'metric' ? 'C' : 'F'
-          }`,
+          text: tempText,
         });
+        console.log('Weather badge updated:', tempText);
       }
-    });
-  });
+    } catch (error) {
+      console.error('Error updating weather badge:', error);
+    }
+  }
 });
+

@@ -1,11 +1,107 @@
 .overlayCard {
   position: fixed;
-  top: 15%;
-  left: 5%;
-  max-width: 240px;
-  max-height: 240px;
-  background-color: #f5f5f5;
-  z-index: 1000;
+  top: 20px;
+  right: 20px;
+  max-width: 320px;
+  min-width: 280px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  z-index: 10000;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  animation: slideIn 0.3s ease-out;
+  cursor: move;
+  overflow: hidden;
+}
 
-  color: red;
+.drag-handle {
+  cursor: move;
+  user-select: none;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.overlayCard .MuiCard-root {
+  background: transparent;
+  box-shadow: none;
+}
+
+.overlayCard .MuiCardContent-root {
+  padding: 16px;
+  color: white;
+  min-height: 120px;
+}
+
+.overlayCard .weatherCard-container {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  backdrop-filter: blur(5px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 12px;
+}
+
+.overlayCard .weatherCard-title {
+  color: white !important;
+  font-weight: 600;
+  font-size: 16px !important;
+  margin-bottom: 8px;
+}
+
+.overlayCard .weatherCard-body {
+  color: rgba(255, 255, 255, 0.9) !important;
+  font-size: 13px !important;
+  line-height: 1.4;
+}
+
+.overlayCard .weatherCard-temperature {
+  color: white !important;
+  font-size: 20px !important;
+  font-weight: 700;
+}
+
+.overlayCard .weatherCard-feels-like {
+  color: rgba(255, 255, 255, 0.8) !important;
+  font-size: 12px !important;
+}
+
+.overlayCard .weatherCard-icon {
+  width: 48px !important;
+  height: 48px !important;
+}
+
+.overlayCard .weatherCard-actions {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.overlayCard .weatherCard-button {
+  color: white !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+  font-size: 11px !important;
+  padding: 4px 8px !important;
+}
+
+.overlayCard .weatherCard-error {
+  color: #ff6b6b !important;
+  text-align: center;
+  padding: 16px;
+  min-height: 80px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
 }

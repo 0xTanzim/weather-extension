@@ -14,15 +14,19 @@
     "default_title": "React Extension",
     "default_icon": "icon.png"
   },
-  "permissions": ["storage", "contextMenus", "alarms"],
+  "permissions": ["storage", "contextMenus", "alarms", "scripting", "geolocation", "activeTab"],
+
   "options_page": "options.html",
   "background": {
     "service_worker": "background.js"
   },
+
+  "host_permissions": ["<all_urls>"],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["contentScript.js"]
+      "js": ["contentScript.js"],
+      "run_at": "document_idle"
     }
   ]
 }

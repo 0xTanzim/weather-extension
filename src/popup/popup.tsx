@@ -1,13 +1,10 @@
 import '@fontsource/roboto';
 import AddIcon from '@mui/icons-material/Add';
-import {
-  Box,
-  Grid,
-  IconButton,
-  InputBase,
-  Paper,
-  Typography,
-} from '@mui/material';
+import Box from '@mui/material/Box';
+import IconButton from '@mui/material/IconButton';
+import InputBase from '@mui/material/InputBase';
+import Paper from '@mui/material/Paper';
+import Typography from '@mui/material/Typography';
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
@@ -22,20 +19,36 @@ import { PictureInPicture } from '@mui/icons-material';
 import WeatherCard from '../components/WeatherCard';
 import { Messages } from '../utils/messages';
 import './popup.css';
+import MyLocationIcon from '@mui/icons-material/MyLocation';
+import { getCityNameFromCoords, getWeatherData } from '../utils/api';
+import { OpenWeatherTempScale } from '../types';
+import CoffeeIcon from '@mui/icons-material/Coffee';
+import Button from '@mui/material/Button';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import LocationOnIcon from '@mui/icons-material/LocationOn';
+import SearchIcon from '@mui/icons-material/Search';
+import { Stack, Divider } from '@mui/material';
 
-const App: React.FC<{}> = () => {
+const PopupApp: React.FC<{}> = () => {
   const [cities, setCities] = useState<string[]>([]);
   const [newCity, setNewCity] = useState<string>('');
   const [options, setOptions] = useState<LocalStorageOptions | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    setTimeout(() => setIsRefreshing(false), 1000);
+  };
 
   const handleCityButtonClick = () => {
     if (newCity.trim() !== '') {
       const updatedCities = [...cities, newCity.trim()];
       setStoredCities(updatedCities)
         .then(() => {
-          setCities((prevCities) => [...prevCities, newCity.trim()]);
+          setCities(updatedCities);
           setNewCity('');
-          console.log('Cities updated successfully');
+          console.log('Cities updated successfully:', updatedCities);
         })
         .catch((error) => {
           console.error('Error updating cities:', error);
@@ -50,7 +63,7 @@ const App: React.FC<{}> = () => {
     setStoredCities(updatedCities)
       .then(() => {
         setCities(updatedCities);
-        console.log('City deleted successfully');
+        console.log('City deleted successfully:', updatedCities);
       })
       .catch((error) => {
         console.error('Error deleting city:', error);
@@ -58,13 +71,17 @@ const App: React.FC<{}> = () => {
   };
 
   useEffect(() => {
-    getStoredCities().then((storedCities) => {
-      if (storedCities.length > 0) {
-        setCities(storedCities);
-      }
+    Promise.all([
+      getStoredCities(),
+      getStoredOptions()
+    ]).then(([storedCities, storedOptions]) => {
+      console.log('Loaded cities:', storedCities);
+      console.log('Loaded options:', storedOptions);
+      setCities(storedCities || []);
+      setOptions(storedOptions);
+    }).catch((error) => {
+      console.error('Error loading data:', error);
     });
-
-    getStoredOptions().then((options) => setOptions(options));
   }, []);
 
   if (!options) {
@@ -88,92 +105,300 @@ const App: React.FC<{}> = () => {
   };
 
   const handleOverlayToggle = () => {
-    chrome.tabs.query(
-      {
-        active: true,
-      },
-      (tabs) => {
-        if (tabs.length > 0) {
-          chrome.tabs.sendMessage(tabs[0].id!, Messages.TOGGLE_OVERLAY);
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs[0];
+      if (!tab?.id || !/^https?:\/\//.test(tab.url || '')) {
+        console.warn('Cannot inject content script on this page type');
+        return;
+      }
+      
+      chrome.tabs.sendMessage(tab.id, Messages.TOGGLE_OVERLAY, (response) => {
+        if (chrome.runtime.lastError) {
+          console.warn('Content script not available:', chrome.runtime.lastError.message);
+          chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ['contentScript.js']
+          }).then(() => {
+            setTimeout(() => {
+              chrome.tabs.sendMessage(tab.id!, Messages.TOGGLE_OVERLAY, (retryResponse) => {
+                if (chrome.runtime.lastError) {
+                  console.error('Still failed after injection:', chrome.runtime.lastError.message);
+                } else {
+                  console.log('Overlay toggled after injection:', retryResponse);
+                }
+              });
+            }, 100);
+          }).catch((error) => {
+            console.error('Failed to inject content script:', error);
+          });
+        } else {
+          console.log('Overlay toggled successfully:', response);
         }
+      });
+    });
+  };
+
+  const handleAutoLocation = () => {
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const city = await getCityNameFromCoords(pos.coords.latitude, pos.coords.longitude);
+        if (city) {
+          const updateOptions: LocalStorageOptions = {
+            ...options!,
+            homeCity: city,
+          };
+          setStoreOptions(updateOptions).then(() => {
+            setOptions(updateOptions);
+            setIsLocating(false);
+            updateBadge(city, updateOptions.tempScale);
+          });
+        } else {
+          setIsLocating(false);
+          alert('Could not determine city from your location.');
+        }
+      },
+      (err) => {
+        setIsLocating(false);
+        alert('Location access denied or unavailable.');
       }
     );
   };
 
+  const updateBadge = async (city: string, tempScale: OpenWeatherTempScale) => {
+    try {
+      const data = await getWeatherData(city, tempScale);
+      if (data) {
+        const tempText = `${Math.round(data.main.temp)}°${tempScale === 'metric' ? 'C' : 'F'}`;
+        chrome.action.setBadgeText({ text: tempText });
+        chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
+      }
+    } catch (error) {
+      console.error('Error updating badge:', error);
+    }
+  };
+
+  const handleSetDefault = (city: string) => {
+    const updateOptions: LocalStorageOptions = {
+      ...options,
+      homeCity: city,
+    };
+    setStoreOptions(updateOptions).then(() => {
+      setOptions(updateOptions);
+      updateBadge(city, updateOptions.tempScale);
+    });
+  };
+
   return (
-    <div>
-      <Box mx="8px" my="16px">
-        <Grid container justifyContent={'space-evenly'}>
-          <Grid>
-            <Paper>
-              <Box px="15px" py="8px" display="flex" alignItems="center">
-                <InputBase
-                  placeholder="Add a city"
-                  inputProps={{ 'aria-label': 'search' }}
-                  value={newCity}
-                  onChange={(e) => setNewCity(e.target.value.trim())}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && newCity.trim() !== '') {
-                      setCities((prevCities) => [
-                        ...prevCities,
-                        newCity.trim(),
-                      ]);
-                      setNewCity('');
-                    }
-                  }}
-                />
+    <Box sx={{ 
+      width: '450px', 
+      minHeight: '600px',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      color: 'white',
+      fontFamily: 'Roboto, sans-serif'
+    }}>
+      {/* Header */}
+      <Box sx={{ 
+        p: 3, 
+        pb: 2,
+        background: 'rgba(255, 255, 255, 0.1)',
+        backdropFilter: 'blur(10px)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.2)'
+      }}>
+        <Typography variant="h5" sx={{ 
+          fontWeight: 600, 
+          mb: 2,
+          textAlign: 'center',
+          textShadow: '0 2px 4px rgba(0,0,0,0.3)'
+        }}>
+          🌤️ Weather Extension
+        </Typography>
+        
+        {/* Search Bar */}
+        <Paper elevation={3} sx={{ 
+          borderRadius: 3, 
+          overflow: 'hidden',
+          background: 'rgba(255, 255, 255, 0.95)',
+          mb: 2
+        }}>
+          <Box px={2} py={1.5} display="flex" alignItems="center">
+            <SearchIcon sx={{ color: '#666', mr: 1 }} />
+            <InputBase
+              placeholder="Add a city..."
+              inputProps={{ 'aria-label': 'search' }}
+              value={newCity}
+              onChange={(e) => setNewCity(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newCity.trim() !== '') {
+                  handleCityButtonClick();
+                }
+              }}
+              sx={{ flex: 1, color: '#333' }}
+            />
+            <IconButton 
+              onClick={handleCityButtonClick} 
+              sx={{ 
+                ml: 1,
+                color: '#667eea',
+                '&:hover': { backgroundColor: 'rgba(102, 126, 234, 0.1)' }
+              }}
+            >
+              <AddIcon />
+            </IconButton>
+          </Box>
+        </Paper>
 
-                <IconButton onClick={handleCityButtonClick}>
-                  <AddIcon />
-                </IconButton>
-              </Box>
-            </Paper>
-          </Grid>
+        {/* Action Buttons */}
+        <Stack direction="row" spacing={1} justifyContent="center">
+          <IconButton 
+            onClick={handleTempScaleButtonClick} 
+            sx={{ 
+              bgcolor: 'rgba(255, 255, 255, 0.2)',
+              color: 'white',
+              '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.3)' }
+            }}
+            title={`Switch to ${options.tempScale === 'metric' ? 'Fahrenheit' : 'Celsius'}`}
+          >
+            {options.tempScale === 'metric' ? '°C' : '°F'}
+          </IconButton>
+          <IconButton 
+            onClick={handleOverlayToggle} 
+            sx={{ 
+              bgcolor: 'rgba(255, 255, 255, 0.2)',
+              color: 'white',
+              '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.3)' }
+            }}
+            title="Toggle overlay"
+          >
+            <PictureInPicture />
+          </IconButton>
+          <IconButton 
+            onClick={handleAutoLocation} 
+            disabled={isLocating} 
+            sx={{ 
+              bgcolor: 'rgba(255, 255, 255, 0.2)',
+              color: 'white',
+              '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.3)' },
+              '&:disabled': { opacity: 0.5 }
+            }}
+            title="Set location automatically"
+          >
+            <MyLocationIcon />
+          </IconButton>
+          <IconButton 
+            onClick={handleRefresh} 
+            disabled={isRefreshing}
+            sx={{ 
+              bgcolor: 'rgba(255, 255, 255, 0.2)',
+              color: 'white',
+              '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.3)' },
+              '&:disabled': { opacity: 0.5 }
+            }}
+            title="Refresh weather data"
+          >
+            <RefreshIcon />
+          </IconButton>
+        </Stack>
+      </Box>
 
-          <Grid size="auto">
-            <Paper>
-              <Box py="4px">
-                <IconButton onClick={handleTempScaleButtonClick}>
-                  {options.tempScale === 'metric' ? '\u2103' : '\u2109'}
-                </IconButton>
-              </Box>
-            </Paper>
-          </Grid>
-
-          <Grid size="auto">
-            <Paper>
-              <Box py="4px">
-                <IconButton onClick={handleOverlayToggle}>
-                  <PictureInPicture />
-                </IconButton>
-              </Box>
-            </Paper>
-          </Grid>
-        </Grid>
-
-        {options.homeCity != '' && (
-          <WeatherCard city={options.homeCity} tempScale={options.tempScale} />
+      {/* Content */}
+      <Box sx={{ p: 3, pt: 2 }}>
+        {/* Default Location */}
+        {options.homeCity && (
+          <Box mb={3}>
+            <Box display="flex" alignItems="center" mb={1}>
+              <LocationOnIcon sx={{ mr: 1, color: '#FFD700' }} />
+              <Typography variant="subtitle1" sx={{ 
+                fontWeight: 600,
+                color: '#FFD700',
+                textShadow: '0 1px 2px rgba(0,0,0,0.3)'
+              }}>
+                📍 Current Location: {options.homeCity}
+              </Typography>
+            </Box>
+            <WeatherCard city={options.homeCity} tempScale={options.tempScale} isDefault />
+          </Box>
         )}
 
-        {cities.map((city, index) => (
-          <WeatherCard
-            key={`${city}-${index}`}
-            city={city}
-            onDelete={() => handleDelete(index)}
-            tempScale={options.tempScale}
-          />
-        ))}
-        <Box mt={4} textAlign="center">
-          <Typography variant="caption" color="textSecondary">
+        {/* User Cities */}
+        {cities.length > 0 && (
+          <Box mb={3}>
+            <Typography variant="h6" sx={{ 
+              mb: 2,
+              fontWeight: 600,
+              textShadow: '0 1px 2px rgba(0,0,0,0.3)'
+            }}>
+              🌍 Saved Cities
+            </Typography>
+            <Stack spacing={2}>
+              {cities.map((city, index) => (
+                <WeatherCard
+                  key={`${city}-${index}`}
+                  city={city}
+                  onDelete={() => handleDelete(index)}
+                  tempScale={options.tempScale}
+                  onSetDefault={() => handleSetDefault(city)}
+                  isDefault={city === options.homeCity}
+                />
+              ))}
+            </Stack>
+          </Box>
+        )}
+
+        {/* Empty State */}
+        {cities.length === 0 && !options.homeCity && (
+          <Box textAlign="center" py={4}>
+            <Typography variant="body1" sx={{ opacity: 0.8, mb: 2 }}>
+              No cities added yet. Use the search bar above to add your first city!
+            </Typography>
+          </Box>
+        )}
+      </Box>
+
+      {/* Footer */}
+      <Box sx={{ 
+        mt: 'auto',
+        p: 3,
+        pt: 2,
+        borderTop: '1px solid rgba(255, 255, 255, 0.2)',
+        background: 'rgba(0, 0, 0, 0.1)'
+      }}>
+        <Stack spacing={2} alignItems="center">
+          <Typography variant="caption" sx={{ opacity: 0.7 }}>
             Powered by OpenWeather
           </Typography>
-        </Box>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<CoffeeIcon />}
+            onClick={() => chrome.tabs.create({ url: 'https://buymeacoffee.com/tanzimhossain' })}
+            sx={{
+              borderRadius: 20,
+              textTransform: 'none',
+              borderColor: 'rgba(255, 255, 255, 0.4)',
+              color: 'rgba(255, 255, 255, 0.9)',
+              px: 3,
+              py: 1,
+              '&:hover': {
+                borderColor: 'rgba(255, 255, 255, 0.6)',
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                transform: 'translateY(-1px)',
+                boxShadow: '0 4px 8px rgba(0,0,0,0.2)'
+              }
+            }}
+          >
+            Buy me a coffee ☕
+          </Button>
+        </Stack>
       </Box>
-    </div>
+    </Box>
   );
 };
 
-const container = document.createElement('div');
-document.body.appendChild(container);
+const container = document.getElementById('root') || document.createElement('div');
+if (!container.id) {
+  container.id = 'root';
+  document.body.appendChild(container);
+}
 const root = createRoot(container);
-root.render(<App />);
+root.render(<PopupApp />);
