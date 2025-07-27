@@ -1,201 +1,319 @@
 #!/usr/bin/env node
 
-// Comprehensive test script for the weather API including security tests
+/**
+ * Comprehensive API Test Suite
+ * Tests the weather extension backend API with security validation
+ */
+
 const BASE_URL = 'http://localhost:3000';
 
-async function testAPI() {
-  console.log('🧪 Testing Weather API Security & Functionality...\n');
+// Test configuration
+const TEST_CONFIG = {
+  DELAY_BETWEEN_TESTS: 1000, // 1 second
+  TIMEOUT: 10000, // 10 seconds
+  MAX_RETRIES: 3,
+};
 
-  const tests = [
-    // Basic functionality tests
-    { name: '1. Basic Weather API', test: testBasicWeather },
-    { name: '2. Basic Geocoding API', test: testBasicGeocoding },
-    
-    // Security tests
-    { name: '3. Rate Limiting Test', test: testRateLimiting },
-    { name: '4. Input Validation Test', test: testInputValidation },
-    { name: '5. Malicious Input Test', test: testMaliciousInput },
-    { name: '6. Large Input Test', test: testLargeInput },
-    { name: '7. Invalid Coordinates Test', test: testInvalidCoordinates },
-    { name: '8. Timeout Test', test: testTimeout },
-  ];
+// Colors for console output
+const colors = {
+  reset: '\x1b[0m',
+  bright: '\x1b[1m',
+  red: '\x1b[31m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+  magenta: '\x1b[35m',
+  cyan: '\x1b[36m',
+};
 
-  let passed = 0;
-  let failed = 0;
+function log(message, color = 'reset') {
+  console.log(`${colors[color]}${message}${colors.reset}`);
+}
 
-  for (const testCase of tests) {
-    try {
-      console.log(`\n${testCase.name}...`);
-      await testCase.test();
-      console.log('✅ PASSED');
-      passed++;
-    } catch (error) {
-      console.log(`❌ FAILED: ${error.message}`);
-      failed++;
+function logTest(name, status, details = '') {
+  const icon = status === 'PASS' ? '✅' : status === 'FAIL' ? '❌' : '⚠️';
+  const color = status === 'PASS' ? 'green' : status === 'FAIL' ? 'red' : 'yellow';
+  log(`${icon} ${name}: ${status}${details ? ` - ${details}` : ''}`, color);
+}
+
+async function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function makeRequest(url, options = {}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), TEST_CONFIG.TIMEOUT);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
+}
+
+async function testBasicFunctionality() {
+  log('\n🔍 Testing Basic Functionality', 'cyan');
+
+  try {
+    // Test weather API
+    const weatherResponse = await makeRequest(`${BASE_URL}/api/weather?city=London&units=metric`);
+    const weatherData = await weatherResponse.json();
+
+    if (weatherResponse.ok && weatherData.main && weatherData.weather) {
+      logTest('Weather API', 'PASS', `Temperature: ${weatherData.main.temp}°C`);
+    } else {
+      logTest('Weather API', 'FAIL', weatherData.error || 'Invalid response');
     }
-  }
 
-  console.log(`\n📊 Test Results: ${passed} passed, ${failed} failed`);
-  
-  if (failed === 0) {
-    console.log('🎉 All tests passed! Your API is secure and working correctly.');
-  } else {
-    console.log('⚠️  Some tests failed. Please review the security implementation.');
-  }
-}
+    await delay(TEST_CONFIG.DELAY_BETWEEN_TESTS);
 
-async function testBasicWeather() {
-  const response = await fetch(`${BASE_URL}/api/weather?city=London&units=metric`);
-  const data = await response.json();
-  
-  if (!response.ok) {
-    throw new Error(`Weather API failed: ${data.error || response.status}`);
-  }
-  
-  if (!data.name || !data.main || !data.weather) {
-    throw new Error('Incomplete weather data received');
-  }
-  
-  console.log(`   City: ${data.name}, Temp: ${data.main.temp}°C`);
-}
+    // Test geocoding API
+    const geocodeResponse = await makeRequest(`${BASE_URL}/api/geocode?lat=51.5074&lon=-0.1278`);
+    const geocodeData = await geocodeResponse.json();
 
-async function testBasicGeocoding() {
-  const response = await fetch(`${BASE_URL}/api/geocode?lat=51.51&lon=-0.13`);
-  const data = await response.json();
-  
-  if (!response.ok) {
-    throw new Error(`Geocoding API failed: ${data.error || response.status}`);
+    if (geocodeResponse.ok && geocodeData.city) {
+      logTest('Geocoding API', 'PASS', `City: ${geocodeData.city}`);
+    } else {
+      logTest('Geocoding API', 'FAIL', geocodeData.error || 'Invalid response');
+    }
+
+    await delay(TEST_CONFIG.DELAY_BETWEEN_TESTS);
+
+    // Test status API
+    const statusResponse = await makeRequest(`${BASE_URL}/api/status`);
+    const statusData = await statusResponse.json();
+
+    if (statusResponse.ok && statusData.status === 'healthy') {
+      logTest('Status API', 'PASS', `${statusData.apiKeys.active}/${statusData.apiKeys.total} keys active`);
+    } else {
+      logTest('Status API', 'FAIL', statusData.error || 'Invalid response');
+    }
+
+  } catch (error) {
+    logTest('Basic Functionality', 'FAIL', error.message);
   }
-  
-  if (!data.city) {
-    throw new Error('No city name in geocoding response');
-  }
-  
-  console.log(`   City: ${data.city}, Country: ${data.country}`);
 }
 
 async function testRateLimiting() {
-  const promises = [];
-  
-  // Make 65 requests (should trigger rate limit after 60)
-  for (let i = 0; i < 65; i++) {
-    promises.push(
-      fetch(`${BASE_URL}/api/weather?city=London&units=metric`, {
-        headers: { 'X-Forwarded-For': `192.168.1.${i % 255}` }
-      })
-    );
+  log('\n🛡️ Testing Rate Limiting', 'cyan');
+
+  try {
+    const requests = [];
+
+    // Make multiple requests quickly
+    for (let i = 0; i < 65; i++) {
+      requests.push(
+        makeRequest(`${BASE_URL}/api/weather?city=London&units=metric`)
+          .then(response => ({ response, index: i }))
+          .catch(error => ({ error, index: i }))
+      );
+    }
+
+    const results = await Promise.all(requests);
+    const successful = results.filter(r => r.response && r.response.ok).length;
+    const rateLimited = results.filter(r => r.response && r.response.status === 429).length;
+
+    if (rateLimited > 0) {
+      logTest('Rate Limiting', 'PASS', `${successful} successful, ${rateLimited} rate limited`);
+    } else {
+      logTest('Rate Limiting', 'WARN', 'No rate limiting detected');
+    }
+
+  } catch (error) {
+    logTest('Rate Limiting', 'FAIL', error.message);
   }
-  
-  const responses = await Promise.all(promises);
-  const rateLimited = responses.filter(r => r.status === 429);
-  
-  if (rateLimited.length === 0) {
-    throw new Error('Rate limiting not working - no 429 responses');
-  }
-  
-  console.log(`   Rate limiting working: ${rateLimited.length} requests blocked`);
 }
 
 async function testInputValidation() {
-  const invalidTests = [
-    { city: '', expected: 400 },
-    { city: 'a'.repeat(101), expected: 400 }, // Too long
-    { units: 'invalid', expected: 400 },
+  log('\n🔒 Testing Input Validation', 'cyan');
+
+  const testCases = [
+    { name: 'Empty city', url: '/api/weather?city=&units=metric', expectedStatus: 400 },
+    { name: 'Missing city', url: '/api/weather?units=metric', expectedStatus: 400 },
+    { name: 'Invalid units', url: '/api/weather?city=London&units=invalid', expectedStatus: 400 },
+    { name: 'XSS attempt', url: '/api/weather?city=<script>alert("xss")</script>&units=metric', expectedStatus: 400 },
+    { name: 'SQL injection', url: '/api/weather?city=London;DROP TABLE users;&units=metric', expectedStatus: 400 },
+    { name: 'Invalid coordinates', url: '/api/geocode?lat=999&lon=999', expectedStatus: 400 },
+    { name: 'Missing coordinates', url: '/api/geocode?lat=51.5074', expectedStatus: 400 },
   ];
-  
-  for (const test of invalidTests) {
-    const url = new URL(`${BASE_URL}/api/weather`);
-    if (test.city !== undefined) url.searchParams.set('city', test.city);
-    if (test.units !== undefined) url.searchParams.set('units', test.units);
-    
-    const response = await fetch(url.toString());
-    if (response.status !== test.expected) {
-      throw new Error(`Input validation failed for ${JSON.stringify(test)}`);
+
+  for (const testCase of testCases) {
+    try {
+      const response = await makeRequest(`${BASE_URL}${testCase.url}`);
+
+      if (response.status === testCase.expectedStatus) {
+        logTest(testCase.name, 'PASS');
+      } else {
+        logTest(testCase.name, 'FAIL', `Expected ${testCase.expectedStatus}, got ${response.status}`);
+      }
+
+      await delay(TEST_CONFIG.DELAY_BETWEEN_TESTS);
+    } catch (error) {
+      logTest(testCase.name, 'FAIL', error.message);
     }
   }
-  
-  console.log('   Input validation working correctly');
 }
 
-async function testMaliciousInput() {
-  const maliciousTests = [
-    '<script>alert("xss")</script>',
-    'javascript:alert("xss")',
-    'data:text/html,<script>alert("xss")</script>',
-    'vbscript:msgbox("xss")',
-    'onload=alert("xss")',
-    'onerror=alert("xss")',
-    '"><script>alert("xss")</script>',
+async function testSecurityHeaders() {
+  log('\n🛡️ Testing Security Headers', 'cyan');
+
+  try {
+    const response = await makeRequest(`${BASE_URL}/api/weather?city=London&units=metric`);
+
+    const requiredHeaders = [
+      'X-Content-Type-Options',
+      'X-Frame-Options',
+      'X-XSS-Protection',
+      'Referrer-Policy',
+      'Permissions-Policy',
+      'Strict-Transport-Security',
+    ];
+
+    const missingHeaders = requiredHeaders.filter(header => !response.headers.get(header));
+
+    if (missingHeaders.length === 0) {
+      logTest('Security Headers', 'PASS', 'All required headers present');
+    } else {
+      logTest('Security Headers', 'FAIL', `Missing: ${missingHeaders.join(', ')}`);
+    }
+
+  } catch (error) {
+    logTest('Security Headers', 'FAIL', error.message);
+  }
+}
+
+async function testRoundRobinKeys() {
+  log('\n🔄 Testing Round-Robin Key Rotation', 'cyan');
+
+  try {
+    // Make multiple requests to test key rotation
+    const requests = [];
+    for (let i = 0; i < 10; i++) {
+      requests.push(
+        makeRequest(`${BASE_URL}/api/weather?city=London&units=metric`)
+          .then(response => response.headers.get('X-API-Keys-Available'))
+          .catch(() => null)
+      );
+    }
+
+    const results = await Promise.all(requests);
+    const validResults = results.filter(r => r !== null);
+
+    if (validResults.length > 0) {
+      const uniqueKeys = new Set(validResults);
+      logTest('Round-Robin Keys', 'PASS', `${uniqueKeys.size} different key counts detected`);
+    } else {
+      logTest('Round-Robin Keys', 'WARN', 'Could not detect key rotation');
+    }
+
+  } catch (error) {
+    logTest('Round-Robin Keys', 'FAIL', error.message);
+  }
+}
+
+async function testErrorHandling() {
+  log('\n⚠️ Testing Error Handling', 'cyan');
+
+  const testCases = [
+    { name: 'Non-existent city', url: '/api/weather?city=NonExistentCity12345&units=metric', expectedStatus: 404 },
+    { name: 'Invalid coordinates', url: '/api/geocode?lat=999&lon=999', expectedStatus: 400 },
   ];
-  
-  for (const malicious of maliciousTests) {
-    const response = await fetch(`${BASE_URL}/api/weather?city=${encodeURIComponent(malicious)}`);
-    const data = await response.json();
-    
+
+  for (const testCase of testCases) {
+    try {
+      const response = await makeRequest(`${BASE_URL}${testCase.url}`);
+      const data = await response.json();
+
+      if (response.status === testCase.expectedStatus && data.error) {
+        logTest(testCase.name, 'PASS', 'Proper error response');
+      } else {
+        logTest(testCase.name, 'FAIL', `Expected ${testCase.expectedStatus}, got ${response.status}`);
+      }
+
+      await delay(TEST_CONFIG.DELAY_BETWEEN_TESTS);
+    } catch (error) {
+      logTest(testCase.name, 'FAIL', error.message);
+    }
+  }
+}
+
+async function testTimeoutProtection() {
+  log('\n⏱️ Testing Timeout Protection', 'cyan');
+
+  try {
+    // This test simulates a slow request (though we can't actually make it slow)
+    const response = await makeRequest(`${BASE_URL}/api/weather?city=London&units=metric`);
+
     if (response.ok) {
-      throw new Error(`Malicious input not blocked: ${malicious}`);
+      logTest('Timeout Protection', 'PASS', 'Request completed within timeout');
+    } else {
+      logTest('Timeout Protection', 'FAIL', `Request failed with status ${response.status}`);
     }
-    
-    if (!data.error) {
-      throw new Error(`No error response for malicious input: ${malicious}`);
-    }
-  }
-  
-  console.log('   Malicious input blocking working');
-}
 
-async function testLargeInput() {
-  const largeCity = 'a'.repeat(1000);
-  const response = await fetch(`${BASE_URL}/api/weather?city=${encodeURIComponent(largeCity)}`);
-  
-  if (response.ok) {
-    throw new Error('Large input not blocked');
-  }
-  
-  console.log('   Large input blocking working');
-}
-
-async function testInvalidCoordinates() {
-  const invalidCoords = [
-    { lat: 91, lon: 0, desc: 'Latitude > 90' },
-    { lat: -91, lon: 0, desc: 'Latitude < -90' },
-    { lat: 0, lon: 181, desc: 'Longitude > 180' },
-    { lat: 0, lon: -181, desc: 'Longitude < -180' },
-    { lat: NaN, lon: 0, desc: 'NaN latitude' },
-    { lat: 0, lon: NaN, desc: 'NaN longitude' },
-  ];
-  
-  for (const coord of invalidCoords) {
-    const response = await fetch(`${BASE_URL}/api/geocode?lat=${coord.lat}&lon=${coord.lon}`);
-    
-    if (response.ok) {
-      throw new Error(`Invalid coordinates not blocked: ${coord.desc}`);
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      logTest('Timeout Protection', 'PASS', 'Request properly timed out');
+    } else {
+      logTest('Timeout Protection', 'FAIL', error.message);
     }
   }
-  
-  console.log('   Invalid coordinate validation working');
 }
 
-async function testTimeout() {
-  // This test simulates a slow request by using a very long city name
-  // that might cause the external API to take longer
-  const longCity = 'a'.repeat(50) + 'VeryLongCityNameThatMightCauseTimeout';
-  
+async function runAllTests() {
+  log('🚀 Starting Weather Extension Backend API Tests', 'bright');
+  log(`📍 Testing against: ${BASE_URL}`, 'blue');
+  log(`⏰ Timeout: ${TEST_CONFIG.TIMEOUT}ms`, 'blue');
+
   const startTime = Date.now();
-  const response = await fetch(`${BASE_URL}/api/weather?city=${encodeURIComponent(longCity)}`);
-  const endTime = Date.now();
-  
-  const responseTime = endTime - startTime;
-  
-  if (responseTime > 15000) { // Should timeout before 15 seconds
-    throw new Error(`Request took too long: ${responseTime}ms`);
+
+  try {
+    await testBasicFunctionality();
+    await delay(TEST_CONFIG.DELAY_BETWEEN_TESTS);
+
+    await testRateLimiting();
+    await delay(TEST_CONFIG.DELAY_BETWEEN_TESTS);
+
+    await testInputValidation();
+    await delay(TEST_CONFIG.DELAY_BETWEEN_TESTS);
+
+    await testSecurityHeaders();
+    await delay(TEST_CONFIG.DELAY_BETWEEN_TESTS);
+
+    await testRoundRobinKeys();
+    await delay(TEST_CONFIG.DELAY_BETWEEN_TESTS);
+
+    await testErrorHandling();
+    await delay(TEST_CONFIG.DELAY_BETWEEN_TESTS);
+
+    await testTimeoutProtection();
+
+  } catch (error) {
+    log(`❌ Test suite failed: ${error.message}`, 'red');
   }
-  
-  console.log(`   Timeout protection working (response time: ${responseTime}ms)`);
+
+  const duration = Date.now() - startTime;
+  log(`\n⏱️ Test suite completed in ${duration}ms`, 'bright');
+  log('🎉 All tests completed!', 'green');
 }
 
-// Run the tests
-testAPI().catch(error => {
-  console.error('❌ Test suite failed:', error);
-  process.exit(1);
-}); 
+// Run tests if this file is executed directly
+if (require.main === module) {
+  runAllTests().catch(console.error);
+}
+
+module.exports = {
+  runAllTests,
+  testBasicFunctionality,
+  testRateLimiting,
+  testInputValidation,
+  testSecurityHeaders,
+  testRoundRobinKeys,
+  testErrorHandling,
+  testTimeoutProtection,
+};

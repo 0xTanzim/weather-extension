@@ -1,57 +1,58 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import apiKeyManager from '../../../utils/apiKeyManager';
 
-// Rate limiting in memory (for production, use Redis or similar)
+// Rate limiting in memory (in production, use Redis or similar)
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 
 // Security configuration
 const SECURITY_CONFIG = {
-  MAX_REQUESTS_PER_MINUTE: 60,
   MAX_CITY_LENGTH: 100,
-  MAX_UNITS_LENGTH: 10,
-  ALLOWED_UNITS: ['metric', 'imperial', 'kelvin'],
+  MAX_RETRIES: 3,
   REQUEST_TIMEOUT: 10000, // 10 seconds
+  RATE_LIMIT: 60, // requests per minute
+  RATE_LIMIT_WINDOW: 60000, // 1 minute
 };
 
 // Rate limiting function
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
-  const windowMs = 60 * 1000; // 1 minute
-  const record = rateLimitMap.get(ip);
+  const userLimit = rateLimitMap.get(ip);
 
-  if (!record || now > record.resetTime) {
-    rateLimitMap.set(ip, { count: 1, resetTime: now + windowMs });
+  if (!userLimit || now > userLimit.resetTime) {
+    rateLimitMap.set(ip, { count: 1, resetTime: now + SECURITY_CONFIG.RATE_LIMIT_WINDOW });
     return true;
   }
 
-  if (record.count >= SECURITY_CONFIG.MAX_REQUESTS_PER_MINUTE) {
+  if (userLimit.count >= SECURITY_CONFIG.RATE_LIMIT) {
     return false;
   }
 
-  record.count++;
+  userLimit.count++;
   return true;
 }
 
 // Input validation
 function validateInput(city: string | null, units: string | null): { valid: boolean; error?: string } {
-  if (!city) {
+  if (!city || typeof city !== 'string') {
     return { valid: false, error: 'City parameter is required' };
   }
 
-  if (typeof city !== 'string') {
-    return { valid: false, error: 'City must be a string' };
+  const trimmed = city.trim();
+  if (trimmed.length === 0) {
+    return { valid: false, error: 'City cannot be empty' };
   }
 
-  if (city.length > SECURITY_CONFIG.MAX_CITY_LENGTH) {
+  if (trimmed.length > SECURITY_CONFIG.MAX_CITY_LENGTH) {
     return { valid: false, error: 'City name too long' };
   }
 
   // Check for potentially malicious characters
   const maliciousPattern = /[<>\"'&]|javascript:|data:|vbscript:|onload=|onerror=/i;
-  if (maliciousPattern.test(city)) {
+  if (maliciousPattern.test(trimmed)) {
     return { valid: false, error: 'Invalid characters in city name' };
   }
 
-  if (units && !SECURITY_CONFIG.ALLOWED_UNITS.includes(units)) {
+  if (!units || !['metric', 'imperial', 'standard'].includes(units)) {
     return { valid: false, error: 'Invalid units parameter' };
   }
 
@@ -61,181 +62,159 @@ function validateInput(city: string | null, units: string | null): { valid: bool
 // Sanitize input
 function sanitizeInput(input: string): string {
   return input
-    .trim()
     .replace(/[<>\"'&]/g, '') // Remove potentially dangerous characters
     .substring(0, SECURITY_CONFIG.MAX_CITY_LENGTH);
 }
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
-  
-  // Enable CORS for Chrome extension
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-    'X-XSS-Protection': '1; mode=block',
-    'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'Permissions-Policy': 'geolocation=()',
-  };
-
-  // Handle preflight requests
-  if (request.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 200,
-      headers: corsHeaders,
-    });
-  }
+  const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
 
   try {
-    // Get client IP for rate limiting
-    const ip = request.headers.get('x-forwarded-for') || 
-               request.headers.get('x-real-ip') || 
-               request.headers.get('cf-connecting-ip') || 
-               'unknown';
-    
     // Rate limiting check
     if (!checkRateLimit(ip)) {
-      return new Response(
-        JSON.stringify({ 
-          error: 'Rate limit exceeded. Please try again later.',
-          retryAfter: 60
-        }),
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Please try again later.' },
         {
           status: 429,
           headers: {
-            'Content-Type': 'application/json',
-            'Retry-After': '60',
-            ...corsHeaders,
-          },
+            'X-RateLimit-Limit': SECURITY_CONFIG.RATE_LIMIT.toString(),
+            'X-RateLimit-Remaining': '0',
+            'X-RateLimit-Reset': new Date(Date.now() + SECURITY_CONFIG.RATE_LIMIT_WINDOW).toISOString(),
+          }
         }
       );
     }
 
-    // Request timeout protection
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Request timeout')), SECURITY_CONFIG.REQUEST_TIMEOUT);
-    });
-
+    // Get query parameters
     const { searchParams } = new URL(request.url);
     const city = searchParams.get('city');
-    const units = searchParams.get('units') || 'metric';
+    const units = searchParams.get('units');
 
     // Input validation
     const validation = validateInput(city, units);
     if (!validation.valid) {
-      return new Response(
-        JSON.stringify({ error: validation.error }),
-        {
-          status: 400,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders,
-          },
-        }
+      return NextResponse.json(
+        { error: validation.error },
+        { status: 400 }
       );
     }
 
     // Sanitize inputs
     const sanitizedCity = sanitizeInput(city!);
-    const sanitizedUnits = SECURITY_CONFIG.ALLOWED_UNITS.includes(units) ? units : 'metric';
+    const sanitizedUnits = units!;
 
-    const API_KEY = process.env.OPEN_WEATHER_API_KEY;
-    
-    if (!API_KEY) {
-      return new Response(
-        JSON.stringify({ error: 'API key not configured' }),
-        {
-          status: 500,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders,
-          },
-        }
-      );
-    }
+    // Get API key using round-robin rotation
+    const apiKey = apiKeyManager.getNextKey();
 
-    // Construct URL with proper encoding
-    const url = new URL('https://api.openweathermap.org/data/2.5/weather');
-    url.searchParams.set('q', sanitizedCity);
-    url.searchParams.set('units', sanitizedUnits);
-    url.searchParams.set('appid', API_KEY);
-    
+    // Build OpenWeather API URL
+    const weatherUrl = new URL('https://api.openweathermap.org/data/2.5/weather');
+    weatherUrl.searchParams.set('q', sanitizedCity);
+    weatherUrl.searchParams.set('units', sanitizedUnits);
+    weatherUrl.searchParams.set('appid', apiKey);
+
     // Fetch with timeout
-    const fetchPromise = fetch(url.toString(), {
-      method: 'GET',
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), SECURITY_CONFIG.REQUEST_TIMEOUT);
+
+    const response = await fetch(weatherUrl.toString(), {
+      signal: controller.signal,
       headers: {
         'User-Agent': 'Weather-Extension-Backend/1.0',
-        'Accept': 'application/json',
       },
     });
 
-    const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
-    
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      
-      // Don't expose internal errors to client
-      const clientError = response.status === 401 ? 'Invalid API key' :
-                         response.status === 404 ? 'City not found' :
-                         'Failed to fetch weather data';
-      
-      return new Response(
-        JSON.stringify({
-          error: clientError,
-          status: response.status,
-        }),
-        {
-          status: response.status,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders,
-          },
-        }
+    clearTimeout(timeoutId);
+
+    // Handle different response status codes
+    if (response.status === 401) {
+      apiKeyManager.recordError(apiKey, 'Invalid API key');
+      return NextResponse.json(
+        { error: 'Weather service temporarily unavailable' },
+        { status: 503 }
       );
     }
 
-    const data = await response.json();
-    
-    // Validate response data
-    if (!data || typeof data !== 'object') {
-      throw new Error('Invalid response from weather API');
+    if (response.status === 404) {
+      return NextResponse.json(
+        { error: 'City not found' },
+        { status: 404 }
+      );
     }
 
+    if (response.status === 429) {
+      apiKeyManager.recordError(apiKey, 'Rate limit exceeded');
+      return NextResponse.json(
+        { error: 'Weather service temporarily unavailable' },
+        { status: 503 }
+      );
+    }
+
+    if (response.status === 500) {
+      apiKeyManager.recordError(apiKey, 'OpenWeather API error');
+      return NextResponse.json(
+        { error: 'Weather service temporarily unavailable' },
+        { status: 503 }
+      );
+    }
+
+    if (!response.ok) {
+      apiKeyManager.recordError(apiKey, `HTTP ${response.status}`);
+      return NextResponse.json(
+        { error: 'Weather service temporarily unavailable' },
+        { status: 503 }
+      );
+    }
+
+    // Parse response
+    const data = await response.json();
+
+    // Validate response structure
+    if (!data || typeof data !== 'object' || !data.main || !data.weather) {
+      apiKeyManager.recordError(apiKey, 'Invalid response structure');
+      return NextResponse.json(
+        { error: 'Invalid weather data received' },
+        { status: 500 }
+      );
+    }
+
+    // Record successful request
+    apiKeyManager.recordSuccess(apiKey);
+
     // Add security headers and timing info
-    const responseTime = Date.now() - startTime;
-    
-    return new Response(JSON.stringify(data), {
-      status: 200,
+    const processingTime = Date.now() - startTime;
+
+    return NextResponse.json(data, {
       headers: {
-        'Content-Type': 'application/json',
-        'X-Response-Time': `${responseTime}ms`,
-        ...corsHeaders,
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'X-XSS-Protection': '1; mode=block',
+        'Referrer-Policy': 'strict-origin-when-cross-origin',
+        'Permissions-Policy': 'geolocation=()',
+        'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+        'X-Processing-Time': processingTime.toString(),
+        'X-API-Keys-Available': apiKeyManager.getActiveKeyCount().toString(),
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
       },
     });
 
   } catch (error) {
     console.error('Weather API error:', error);
-    
-    // Don't expose internal errors
-    const clientMessage = error instanceof Error && error.message.includes('timeout') 
-      ? 'Request timeout' 
-      : 'Internal server error';
-    
-    return new Response(
-      JSON.stringify({
-        error: clientMessage,
-        timestamp: new Date().toISOString(),
-      }),
-      {
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-          ...corsHeaders,
-        },
-      }
+
+    // Handle timeout
+    if (error instanceof Error && error.name === 'AbortError') {
+      return NextResponse.json(
+        { error: 'Request timeout' },
+        { status: 408 }
+      );
+    }
+
+    // Generic error response (don't expose internal details)
+    return NextResponse.json(
+      { error: 'Weather service temporarily unavailable' },
+      { status: 503 }
     );
   }
-} 
+}

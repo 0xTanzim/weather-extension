@@ -1,59 +1,41 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import apiKeyManager from '../../../utils/apiKeyManager';
 
-// Rate limiting in memory (for production, use Redis or similar)
+// Rate limiting in memory (in production, use Redis or similar)
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 
 // Security configuration
 const SECURITY_CONFIG = {
-  MAX_REQUESTS_PER_MINUTE: 60,
-  MAX_COORD_LENGTH: 20,
-  MIN_LAT: -90,
-  MAX_LAT: 90,
-  MIN_LON: -180,
-  MAX_LON: 180,
+  MAX_RETRIES: 3,
   REQUEST_TIMEOUT: 10000, // 10 seconds
+  RATE_LIMIT: 60, // requests per minute
+  RATE_LIMIT_WINDOW: 60000, // 1 minute
 };
 
 // Rate limiting function
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
-  const windowMs = 60 * 1000; // 1 minute
-  const record = rateLimitMap.get(ip);
+  const userLimit = rateLimitMap.get(ip);
 
-  if (!record || now > record.resetTime) {
-    rateLimitMap.set(ip, { count: 1, resetTime: now + windowMs });
+  if (!userLimit || now > userLimit.resetTime) {
+    rateLimitMap.set(ip, { count: 1, resetTime: now + SECURITY_CONFIG.RATE_LIMIT_WINDOW });
     return true;
   }
 
-  if (record.count >= SECURITY_CONFIG.MAX_REQUESTS_PER_MINUTE) {
+  if (userLimit.count >= SECURITY_CONFIG.RATE_LIMIT) {
     return false;
   }
 
-  record.count++;
+  userLimit.count++;
   return true;
 }
 
 // Input validation for coordinates
 function validateCoordinates(lat: string | null, lon: string | null): { valid: boolean; error?: string } {
   if (!lat || !lon) {
-    return { valid: false, error: 'Latitude and longitude parameters are required' };
+    return { valid: false, error: 'Both latitude and longitude are required' };
   }
 
-  if (typeof lat !== 'string' || typeof lon !== 'string') {
-    return { valid: false, error: 'Coordinates must be strings' };
-  }
-
-  if (lat.length > SECURITY_CONFIG.MAX_COORD_LENGTH || lon.length > SECURITY_CONFIG.MAX_COORD_LENGTH) {
-    return { valid: false, error: 'Coordinates too long' };
-  }
-
-  // Check for potentially malicious characters
-  const maliciousPattern = /[<>\"'&]|javascript:|data:|vbscript:|onload=|onerror=/i;
-  if (maliciousPattern.test(lat) || maliciousPattern.test(lon)) {
-    return { valid: false, error: 'Invalid characters in coordinates' };
-  }
-
-  // Validate coordinate ranges
   const latNum = parseFloat(lat);
   const lonNum = parseFloat(lon);
 
@@ -61,11 +43,11 @@ function validateCoordinates(lat: string | null, lon: string | null): { valid: b
     return { valid: false, error: 'Invalid coordinate format' };
   }
 
-  if (latNum < SECURITY_CONFIG.MIN_LAT || latNum > SECURITY_CONFIG.MAX_LAT) {
+  if (latNum < -90 || latNum > 90) {
     return { valid: false, error: 'Latitude must be between -90 and 90' };
   }
 
-  if (lonNum < SECURITY_CONFIG.MIN_LON || lonNum > SECURITY_CONFIG.MAX_LON) {
+  if (lonNum < -180 || lonNum > 180) {
     return { valid: false, error: 'Longitude must be between -180 and 180' };
   }
 
@@ -74,65 +56,30 @@ function validateCoordinates(lat: string | null, lon: string | null): { valid: b
 
 // Sanitize coordinate input
 function sanitizeCoordinate(input: string): string {
-  return input
-    .trim()
-    .replace(/[<>\"'&]/g, '') // Remove potentially dangerous characters
-    .substring(0, SECURITY_CONFIG.MAX_COORD_LENGTH);
+  return input.replace(/[^0-9.-]/g, ''); // Only allow numbers, dots, and minus signs
 }
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
-  
-  // Enable CORS for Chrome extension
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-    'X-XSS-Protection': '1; mode=block',
-    'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'Permissions-Policy': 'geolocation=()',
-  };
-
-  // Handle preflight requests
-  if (request.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 200,
-      headers: corsHeaders,
-    });
-  }
+  const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
 
   try {
-    // Get client IP for rate limiting
-    const ip = request.headers.get('x-forwarded-for') || 
-               request.headers.get('x-real-ip') || 
-               request.headers.get('cf-connecting-ip') || 
-               'unknown';
-    
     // Rate limiting check
     if (!checkRateLimit(ip)) {
-      return new Response(
-        JSON.stringify({ 
-          error: 'Rate limit exceeded. Please try again later.',
-          retryAfter: 60
-        }),
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Please try again later.' },
         {
           status: 429,
           headers: {
-            'Content-Type': 'application/json',
-            'Retry-After': '60',
-            ...corsHeaders,
-          },
+            'X-RateLimit-Limit': SECURITY_CONFIG.RATE_LIMIT.toString(),
+            'X-RateLimit-Remaining': '0',
+            'X-RateLimit-Reset': new Date(Date.now() + SECURITY_CONFIG.RATE_LIMIT_WINDOW).toISOString(),
+          }
         }
       );
     }
 
-    // Request timeout protection
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Request timeout')), SECURITY_CONFIG.REQUEST_TIMEOUT);
-    });
-
+    // Get query parameters
     const { searchParams } = new URL(request.url);
     const lat = searchParams.get('lat');
     const lon = searchParams.get('lon');
@@ -140,15 +87,9 @@ export async function GET(request: NextRequest) {
     // Input validation
     const validation = validateCoordinates(lat, lon);
     if (!validation.valid) {
-      return new Response(
-        JSON.stringify({ error: validation.error }),
-        {
-          status: 400,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders,
-          },
-        }
+      return NextResponse.json(
+        { error: validation.error },
+        { status: 400 }
       );
     }
 
@@ -156,127 +97,133 @@ export async function GET(request: NextRequest) {
     const sanitizedLat = sanitizeCoordinate(lat!);
     const sanitizedLon = sanitizeCoordinate(lon!);
 
-    const API_KEY = process.env.OPEN_WEATHER_API_KEY;
-    
-    if (!API_KEY) {
-      return new Response(
-        JSON.stringify({ error: 'API key not configured' }),
-        {
-          status: 500,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders,
-          },
-        }
-      );
-    }
+    // Get API key using round-robin rotation
+    const apiKey = apiKeyManager.getNextKey();
 
-    // Construct URL with proper encoding
-    const url = new URL('https://api.openweathermap.org/geo/1.0/reverse');
-    url.searchParams.set('lat', sanitizedLat);
-    url.searchParams.set('lon', sanitizedLon);
-    url.searchParams.set('limit', '1');
-    url.searchParams.set('appid', API_KEY);
-    
+    // Build OpenWeather Geocoding API URL
+    const geocodeUrl = new URL('https://api.openweathermap.org/geo/1.0/reverse');
+    geocodeUrl.searchParams.set('lat', sanitizedLat);
+    geocodeUrl.searchParams.set('lon', sanitizedLon);
+    geocodeUrl.searchParams.set('limit', '1');
+    geocodeUrl.searchParams.set('appid', apiKey);
+
     // Fetch with timeout
-    const fetchPromise = fetch(url.toString(), {
-      method: 'GET',
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), SECURITY_CONFIG.REQUEST_TIMEOUT);
+
+    const response = await fetch(geocodeUrl.toString(), {
+      signal: controller.signal,
       headers: {
         'User-Agent': 'Weather-Extension-Backend/1.0',
-        'Accept': 'application/json',
       },
     });
 
-    const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
-    
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      
-      // Don't expose internal errors to client
-      const clientError = response.status === 401 ? 'Invalid API key' :
-                         response.status === 404 ? 'Location not found' :
-                         'Failed to get city name';
-      
-      return new Response(
-        JSON.stringify({
-          error: clientError,
-          status: response.status,
-        }),
-        {
-          status: response.status,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders,
-          },
-        }
+    clearTimeout(timeoutId);
+
+    // Handle different response status codes
+    if (response.status === 401) {
+      apiKeyManager.recordError(apiKey, 'Invalid API key');
+      return NextResponse.json(
+        { error: 'Geocoding service temporarily unavailable' },
+        { status: 503 }
       );
     }
 
+    if (response.status === 404) {
+      return NextResponse.json(
+        { error: 'Location not found' },
+        { status: 404 }
+      );
+    }
+
+    if (response.status === 429) {
+      apiKeyManager.recordError(apiKey, 'Rate limit exceeded');
+      return NextResponse.json(
+        { error: 'Geocoding service temporarily unavailable' },
+        { status: 503 }
+      );
+    }
+
+    if (response.status === 500) {
+      apiKeyManager.recordError(apiKey, 'OpenWeather API error');
+      return NextResponse.json(
+        { error: 'Geocoding service temporarily unavailable' },
+        { status: 503 }
+      );
+    }
+
+    if (!response.ok) {
+      apiKeyManager.recordError(apiKey, `HTTP ${response.status}`);
+      return NextResponse.json(
+        { error: 'Geocoding service temporarily unavailable' },
+        { status: 503 }
+      );
+    }
+
+    // Parse response
     const data = await response.json();
 
-    // Validate response data
-    if (!Array.isArray(data)) {
-      throw new Error('Invalid response from geocoding API');
-    }
-
-    if (data.length > 0) {
-      const location = data[0];
-      
-      // Validate location data
-      if (!location || typeof location !== 'object') {
-        throw new Error('Invalid location data');
-      }
-
-      const responseTime = Date.now() - startTime;
-      
-      return new Response(
-        JSON.stringify({ 
-          city: location.name || null,
-          country: location.country || null,
-          state: location.state || null,
-        }),
-        {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Response-Time': `${responseTime}ms`,
-            ...corsHeaders,
-          },
-        }
-      );
-    } else {
-      return new Response(
-        JSON.stringify({ error: 'City not found for these coordinates' }),
-        {
-          status: 404,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders,
-          },
-        }
+    // Validate response structure
+    if (!Array.isArray(data) || data.length === 0) {
+      return NextResponse.json(
+        { error: 'Location not found' },
+        { status: 404 }
       );
     }
+
+    const location = data[0];
+    if (!location || !location.name) {
+      apiKeyManager.recordError(apiKey, 'Invalid response structure');
+      return NextResponse.json(
+        { error: 'Invalid location data received' },
+        { status: 500 }
+      );
+    }
+
+    // Record successful request
+    apiKeyManager.recordSuccess(apiKey);
+
+    // Return city name
+    const result = {
+      city: location.name,
+      country: location.country,
+      state: location.state,
+    };
+
+    // Add security headers and timing info
+    const processingTime = Date.now() - startTime;
+
+    return NextResponse.json(result, {
+      headers: {
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'X-XSS-Protection': '1; mode=block',
+        'Referrer-Policy': 'strict-origin-when-cross-origin',
+        'Permissions-Policy': 'geolocation=()',
+        'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+        'X-Processing-Time': processingTime.toString(),
+        'X-API-Keys-Available': apiKeyManager.getActiveKeyCount().toString(),
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      },
+    });
 
   } catch (error) {
-    console.error('Geocoding error:', error);
-    
-    // Don't expose internal errors
-    const clientMessage = error instanceof Error && error.message.includes('timeout') 
-      ? 'Request timeout' 
-      : 'Internal server error';
-    
-    return new Response(
-      JSON.stringify({
-        error: clientMessage,
-        timestamp: new Date().toISOString(),
-      }),
-      {
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-          ...corsHeaders,
-        },
-      }
+    console.error('Geocoding API error:', error);
+
+    // Handle timeout
+    if (error instanceof Error && error.name === 'AbortError') {
+      return NextResponse.json(
+        { error: 'Request timeout' },
+        { status: 408 }
+      );
+    }
+
+    // Generic error response (don't expose internal details)
+    return NextResponse.json(
+      { error: 'Geocoding service temporarily unavailable' },
+      { status: 503 }
     );
   }
-} 
+}
