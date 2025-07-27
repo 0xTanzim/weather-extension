@@ -207,8 +207,9 @@ export async function GET(request: NextRequest) {
         'X-Processing-Time': processingTime.toString(),
         'X-API-Keys-Available': apiKeyManager.getActiveKeyCount().toString(),
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+        'Access-Control-Max-Age': '86400',
       },
     });
 

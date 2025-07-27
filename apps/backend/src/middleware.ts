@@ -127,22 +127,6 @@ export function middleware(request: NextRequest) {
     );
   }
 
-  // Check origin for CORS (but be more permissive for Chrome extensions)
-  const origin = request.headers.get('origin');
-  const isChromeExtension = origin && origin.startsWith('chrome-extension://');
-  const isLocalhost = origin && (origin.includes('localhost') || origin.includes('127.0.0.1'));
-
-  if (!isChromeExtension && !isLocalhost && origin && !isAllowedOrigin(request)) {
-    console.log(`Blocked request from unauthorized origin: ${origin}`);
-    return new NextResponse(
-      JSON.stringify({ error: 'Unauthorized origin' }),
-      {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' }
-      }
-    );
-  }
-
   // Continue with the request
   const response = NextResponse.next();
 
@@ -154,7 +138,7 @@ export function middleware(request: NextRequest) {
   response.headers.set('Permissions-Policy', 'geolocation=()');
   response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 
-  // Add CORS headers for API routes
+  // Add CORS headers for API routes - Allow all origins for Chrome extensions
   if (request.nextUrl.pathname.startsWith('/api/')) {
     response.headers.set('Access-Control-Allow-Origin', '*');
     response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
