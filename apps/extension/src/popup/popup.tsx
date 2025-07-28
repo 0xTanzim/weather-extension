@@ -8,11 +8,11 @@ import Typography from '@mui/material/Typography';
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
-    getStoredCities,
-    getStoredOptions,
-    LocalStorageOptions,
-    setStoredCities,
-    setStoreOptions,
+  getStoredCities,
+  getStoredOptions,
+  LocalStorageOptions,
+  setStoredCities,
+  setStoreOptions,
 } from '../utils/storage';
 
 import { PictureInPicture } from '@mui/icons-material';
@@ -75,7 +75,7 @@ const PopupApp: React.FC<{}> = () => {
     ]).then(([storedCities, storedOptions]) => {
       setCities(storedCities || []);
       if (storedOptions) {
-        setOptions(storedOptions);
+      setOptions(storedOptions);
       }
     }).catch((error) => {
       console.error('Error loading data:', error);
@@ -117,10 +117,10 @@ const PopupApp: React.FC<{}> = () => {
             setTimeout(() => {
               if (tab.id) {
                 chrome.tabs.sendMessage(tab.id, Messages.TOGGLE_OVERLAY, (retryResponse) => {
-                  if (chrome.runtime.lastError) {
+                if (chrome.runtime.lastError) {
                     console.error('Failed to toggle overlay:', chrome.runtime.lastError.message);
-                  }
-                });
+                }
+              });
               }
             }, 100);
           }).catch((error) => {

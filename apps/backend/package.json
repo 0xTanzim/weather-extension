@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "clean": "rm -rf .next",
-    "test": "node test-api.js"
+    "test": "node test-api.js",
+    "test:caching": "node test-http-caching.js"
   },
   "dependencies": {
     "react": "18.2.0",

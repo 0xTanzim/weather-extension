@@ -4,6 +4,16 @@ import apiKeyManager from '../../../utils/apiKeyManager';
 // Rate limiting in memory (in production, use Redis or similar)
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 
+// Cache configuration for HTTP headers
+const CACHE_CONFIG = {
+  // Geocoding cache duration (in seconds) - coordinates don't change often
+  GEOCODE_CACHE_DURATION: 86400, // 24 hours - coordinates are static
+  // Error cache duration (cache errors briefly to avoid hammering bad keys)
+  ERROR_CACHE_DURATION: 300, // 5 minutes
+  // Rate limit cache duration
+  RATE_LIMIT_CACHE: 60, // 1 minute
+};
+
 // Security configuration
 const SECURITY_CONFIG = {
   MAX_RETRIES: 3,
@@ -30,17 +40,17 @@ function checkRateLimit(ip: string): boolean {
   return true;
 }
 
-// Input validation for coordinates
+// Coordinate validation
 function validateCoordinates(lat: string | null, lon: string | null): { valid: boolean; error?: string } {
   if (!lat || !lon) {
-    return { valid: false, error: 'Both latitude and longitude are required' };
+    return { valid: false, error: 'Latitude and longitude are required' };
   }
 
   const latNum = parseFloat(lat);
   const lonNum = parseFloat(lon);
 
   if (isNaN(latNum) || isNaN(lonNum)) {
-    return { valid: false, error: 'Invalid coordinate format' };
+    return { valid: false, error: 'Invalid coordinates' };
   }
 
   if (latNum < -90 || latNum > 90) {
@@ -54,9 +64,32 @@ function validateCoordinates(lat: string | null, lon: string | null): { valid: b
   return { valid: true };
 }
 
-// Sanitize coordinate input
-function sanitizeCoordinate(input: string): string {
-  return input.replace(/[^0-9.-]/g, ''); // Only allow numbers, dots, and minus signs
+// Coordinate sanitization
+function sanitizeCoordinate(coord: string): string {
+  return parseFloat(coord).toFixed(6);
+}
+
+// HTTP Cache headers helper - This is what Vercel's CDN will use
+function getCacheHeaders(cacheDuration: number = CACHE_CONFIG.GEOCODE_CACHE_DURATION) {
+  const now = new Date();
+  const expires = new Date(now.getTime() + cacheDuration * 1000);
+
+  return {
+    'Cache-Control': `public, max-age=${cacheDuration}, s-maxage=${cacheDuration}, stale-while-revalidate=3600`,
+    'Expires': expires.toUTCString(),
+    'Last-Modified': now.toUTCString(),
+    'ETag': `"geocode-${now.getTime()}"`,
+    'X-Cache-Duration': cacheDuration.toString(),
+  };
+}
+
+// No-cache headers for errors
+function getNoCacheHeaders() {
+  return {
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+  };
 }
 
 export async function OPTIONS(request: NextRequest) {
@@ -86,6 +119,7 @@ export async function GET(request: NextRequest) {
             'X-RateLimit-Limit': SECURITY_CONFIG.RATE_LIMIT.toString(),
             'X-RateLimit-Remaining': '0',
             'X-RateLimit-Reset': new Date(Date.now() + SECURITY_CONFIG.RATE_LIMIT_WINDOW).toISOString(),
+            ...getNoCacheHeaders(),
           }
         }
       );
@@ -101,7 +135,10 @@ export async function GET(request: NextRequest) {
     if (!validation.valid) {
       return NextResponse.json(
         { error: validation.error },
-        { status: 400 }
+        {
+          status: 400,
+          headers: getNoCacheHeaders(),
+        }
       );
     }
 
@@ -137,14 +174,24 @@ export async function GET(request: NextRequest) {
       apiKeyManager.recordError(apiKey, 'Invalid API key');
       return NextResponse.json(
         { error: 'Geocoding service temporarily unavailable' },
-        { status: 503 }
+        {
+          status: 503,
+          headers: getNoCacheHeaders(),
+        }
       );
     }
 
     if (response.status === 404) {
+      // Cache 404 responses briefly to avoid hammering
       return NextResponse.json(
         { error: 'Location not found' },
-        { status: 404 }
+        {
+          status: 404,
+          headers: {
+            ...getCacheHeaders(CACHE_CONFIG.ERROR_CACHE_DURATION),
+            'X-Cache-Source': 'error-cache',
+          }
+        }
       );
     }
 
@@ -152,7 +199,10 @@ export async function GET(request: NextRequest) {
       apiKeyManager.recordError(apiKey, 'Rate limit exceeded');
       return NextResponse.json(
         { error: 'Geocoding service temporarily unavailable' },
-        { status: 503 }
+        {
+          status: 503,
+          headers: getNoCacheHeaders(),
+        }
       );
     }
 
@@ -160,7 +210,10 @@ export async function GET(request: NextRequest) {
       apiKeyManager.recordError(apiKey, 'OpenWeather API error');
       return NextResponse.json(
         { error: 'Geocoding service temporarily unavailable' },
-        { status: 503 }
+        {
+          status: 503,
+          headers: getNoCacheHeaders(),
+        }
       );
     }
 
@@ -168,7 +221,10 @@ export async function GET(request: NextRequest) {
       apiKeyManager.recordError(apiKey, `HTTP ${response.status}`);
       return NextResponse.json(
         { error: 'Geocoding service temporarily unavailable' },
-        { status: 503 }
+        {
+          status: 503,
+          headers: getNoCacheHeaders(),
+        }
       );
     }
 
@@ -179,7 +235,13 @@ export async function GET(request: NextRequest) {
     if (!Array.isArray(data) || data.length === 0) {
       return NextResponse.json(
         { error: 'Location not found' },
-        { status: 404 }
+        {
+          status: 404,
+          headers: {
+            ...getCacheHeaders(CACHE_CONFIG.ERROR_CACHE_DURATION),
+            'X-Cache-Source': 'error-cache',
+          }
+        }
       );
     }
 
@@ -188,7 +250,10 @@ export async function GET(request: NextRequest) {
       apiKeyManager.recordError(apiKey, 'Invalid response structure');
       return NextResponse.json(
         { error: 'Invalid location data received' },
-        { status: 500 }
+        {
+          status: 500,
+          headers: getNoCacheHeaders(),
+        }
       );
     }
 
@@ -207,6 +272,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(result, {
       headers: {
+        ...getCacheHeaders(),
         'X-Content-Type-Options': 'nosniff',
         'X-Frame-Options': 'DENY',
         'X-XSS-Protection': '1; mode=block',
@@ -214,6 +280,7 @@ export async function GET(request: NextRequest) {
         'Permissions-Policy': 'geolocation=()',
         'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
         'X-Processing-Time': processingTime.toString(),
+        'X-Cache-Source': 'vercel-cdn',
         'X-API-Keys-Available': apiKeyManager.getActiveKeyCount().toString(),
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -229,14 +296,20 @@ export async function GET(request: NextRequest) {
     if (error instanceof Error && error.name === 'AbortError') {
       return NextResponse.json(
         { error: 'Request timeout' },
-        { status: 408 }
+        {
+          status: 408,
+          headers: getNoCacheHeaders(),
+        }
       );
     }
 
     // Generic error response (don't expose internal details)
     return NextResponse.json(
       { error: 'Geocoding service temporarily unavailable' },
-      { status: 503 }
+      {
+        status: 503,
+        headers: getNoCacheHeaders(),
+      }
     );
   }
 }

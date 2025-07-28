@@ -4,6 +4,16 @@ import apiKeyManager from '../../../utils/apiKeyManager';
 // Rate limiting in memory (in production, use Redis or similar)
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 
+// Cache configuration for HTTP headers
+const CACHE_CONFIG = {
+  // Weather data cache duration (in seconds)
+  WEATHER_CACHE_DURATION: 1800, // 30 minutes - weather doesn't change frequently
+  // Error cache duration (cache errors briefly to avoid hammering bad keys)
+  ERROR_CACHE_DURATION: 300, // 5 minutes
+  // Rate limit cache duration
+  RATE_LIMIT_CACHE: 60, // 1 minute
+};
+
 // Security configuration
 const SECURITY_CONFIG = {
   MAX_CITY_LENGTH: 100,
@@ -59,11 +69,35 @@ function validateInput(city: string | null, units: string | null): { valid: bool
   return { valid: true };
 }
 
-// Sanitize input
+// Input sanitization
 function sanitizeInput(input: string): string {
   return input
-    .replace(/[<>\"'&]/g, '') // Remove potentially dangerous characters
+    .trim()
+    .replace(/[<>\"'&]/g, '')
     .substring(0, SECURITY_CONFIG.MAX_CITY_LENGTH);
+}
+
+// HTTP Cache headers helper - This is what Vercel's CDN will use
+function getCacheHeaders(cacheDuration: number = CACHE_CONFIG.WEATHER_CACHE_DURATION) {
+  const now = new Date();
+  const expires = new Date(now.getTime() + cacheDuration * 1000);
+
+  return {
+    'Cache-Control': `public, max-age=${cacheDuration}, s-maxage=${cacheDuration}, stale-while-revalidate=300`,
+    'Expires': expires.toUTCString(),
+    'Last-Modified': now.toUTCString(),
+    'ETag': `"weather-${now.getTime()}"`,
+    'X-Cache-Duration': cacheDuration.toString(),
+  };
+}
+
+// No-cache headers for errors
+function getNoCacheHeaders() {
+  return {
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+  };
 }
 
 export async function OPTIONS(request: NextRequest) {
@@ -93,6 +127,7 @@ export async function GET(request: NextRequest) {
             'X-RateLimit-Limit': SECURITY_CONFIG.RATE_LIMIT.toString(),
             'X-RateLimit-Remaining': '0',
             'X-RateLimit-Reset': new Date(Date.now() + SECURITY_CONFIG.RATE_LIMIT_WINDOW).toISOString(),
+            ...getNoCacheHeaders(),
           }
         }
       );
@@ -108,7 +143,10 @@ export async function GET(request: NextRequest) {
     if (!validation.valid) {
       return NextResponse.json(
         { error: validation.error },
-        { status: 400 }
+        {
+          status: 400,
+          headers: getNoCacheHeaders(),
+        }
       );
     }
 
@@ -143,14 +181,24 @@ export async function GET(request: NextRequest) {
       apiKeyManager.recordError(apiKey, 'Invalid API key');
       return NextResponse.json(
         { error: 'Weather service temporarily unavailable' },
-        { status: 503 }
+        {
+          status: 503,
+          headers: getNoCacheHeaders(),
+        }
       );
     }
 
     if (response.status === 404) {
+      // Cache 404 responses briefly to avoid hammering
       return NextResponse.json(
         { error: 'City not found' },
-        { status: 404 }
+        {
+          status: 404,
+          headers: {
+            ...getCacheHeaders(CACHE_CONFIG.ERROR_CACHE_DURATION),
+            'X-Cache-Source': 'error-cache',
+          }
+        }
       );
     }
 
@@ -158,7 +206,10 @@ export async function GET(request: NextRequest) {
       apiKeyManager.recordError(apiKey, 'Rate limit exceeded');
       return NextResponse.json(
         { error: 'Weather service temporarily unavailable' },
-        { status: 503 }
+        {
+          status: 503,
+          headers: getNoCacheHeaders(),
+        }
       );
     }
 
@@ -166,7 +217,10 @@ export async function GET(request: NextRequest) {
       apiKeyManager.recordError(apiKey, 'OpenWeather API error');
       return NextResponse.json(
         { error: 'Weather service temporarily unavailable' },
-        { status: 503 }
+        {
+          status: 503,
+          headers: getNoCacheHeaders(),
+        }
       );
     }
 
@@ -174,7 +228,10 @@ export async function GET(request: NextRequest) {
       apiKeyManager.recordError(apiKey, `HTTP ${response.status}`);
       return NextResponse.json(
         { error: 'Weather service temporarily unavailable' },
-        { status: 503 }
+        {
+          status: 503,
+          headers: getNoCacheHeaders(),
+        }
       );
     }
 
@@ -186,7 +243,10 @@ export async function GET(request: NextRequest) {
       apiKeyManager.recordError(apiKey, 'Invalid response structure');
       return NextResponse.json(
         { error: 'Invalid weather data received' },
-        { status: 500 }
+        {
+          status: 500,
+          headers: getNoCacheHeaders(),
+        }
       );
     }
 
@@ -198,6 +258,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(data, {
       headers: {
+        ...getCacheHeaders(),
         'X-Content-Type-Options': 'nosniff',
         'X-Frame-Options': 'DENY',
         'X-XSS-Protection': '1; mode=block',
@@ -205,6 +266,7 @@ export async function GET(request: NextRequest) {
         'Permissions-Policy': 'geolocation=()',
         'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
         'X-Processing-Time': processingTime.toString(),
+        'X-Cache-Source': 'vercel-cdn',
         'X-API-Keys-Available': apiKeyManager.getActiveKeyCount().toString(),
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -220,14 +282,20 @@ export async function GET(request: NextRequest) {
     if (error instanceof Error && error.name === 'AbortError') {
       return NextResponse.json(
         { error: 'Request timeout' },
-        { status: 408 }
+        {
+          status: 408,
+          headers: getNoCacheHeaders(),
+        }
       );
     }
 
     // Generic error response (don't expose internal details)
     return NextResponse.json(
       { error: 'Weather service temporarily unavailable' },
-      { status: 503 }
+      {
+        status: 503,
+        headers: getNoCacheHeaders(),
+      }
     );
   }
 }

@@ -107,7 +107,7 @@ async function testRateLimiting() {
     const requests = [];
 
     // Make multiple requests quickly
-    for (let i = 0; i < 65; i++) {
+  for (let i = 0; i < 65; i++) {
       requests.push(
         makeRequest(`${BASE_URL}/api/weather?city=London&units=metric`)
           .then(response => ({ response, index: i }))

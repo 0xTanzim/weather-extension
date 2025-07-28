@@ -1,4 +1,5 @@
 import { OpenWeatherData, OpenWeatherTempScale } from '../types/open_weather';
+import { clientCache } from './cache';
 
 // Your Vercel backend URL - replace with your actual URL after deployment
 const BACKEND_URL = 'https://weather-extentions-backend.vercel.app';
@@ -44,14 +45,13 @@ function validateUnits(units: OpenWeatherTempScale): boolean {
   return SECURITY_CONFIG.ALLOWED_UNITS.includes(units);
 }
 
-// Validate coordinates
 function validateCoordinates(lat: number, lon: number): { valid: boolean; error?: string } {
   if (typeof lat !== 'number' || typeof lon !== 'number') {
-    return { valid: false, error: 'Coordinates must be numbers' };
+    return { valid: false, error: 'Invalid coordinate types' };
   }
 
   if (isNaN(lat) || isNaN(lon)) {
-    return { valid: false, error: 'Invalid coordinates' };
+    return { valid: false, error: 'Coordinates must be numbers' };
   }
 
   if (lat < -90 || lat > 90) {
@@ -67,43 +67,40 @@ function validateCoordinates(lat: number, lon: number): { valid: boolean; error?
 
 // Secure fetch with timeout and retry logic
 async function secureFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error('Request timeout')), SECURITY_CONFIG.REQUEST_TIMEOUT);
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SECURITY_CONFIG.REQUEST_TIMEOUT);
 
-  const fetchPromise = fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'User-Agent': 'Weather-Extension/1.0',
-      ...options.headers,
-    },
-  });
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Weather-Extension/1.0',
+        ...options.headers,
+      },
+    });
 
-  return Promise.race([fetchPromise, timeoutPromise]);
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
 }
 
 // Retry logic with exponential backoff
-async function fetchWithRetry(url: string, options: RequestInit = {}): Promise<Response> {
-  let lastError: Error | null = null;
-
-  for (let attempt = 1; attempt <= SECURITY_CONFIG.MAX_RETRIES; attempt++) {
-    try {
-      return await secureFetch(url, options);
-    } catch (error) {
-      lastError = error as Error;
-
-      if (attempt === SECURITY_CONFIG.MAX_RETRIES) {
-        throw lastError;
-      }
-
-      // Exponential backoff: 1s, 2s, 4s
-      const delay = Math.pow(2, attempt - 1) * 1000;
+async function fetchWithRetry(url: string, options: RequestInit = {}, retries = SECURITY_CONFIG.MAX_RETRIES): Promise<Response> {
+  try {
+    return await secureFetch(url, options);
+  } catch (error) {
+    if (retries > 0) {
+      const delay = Math.pow(2, SECURITY_CONFIG.MAX_RETRIES - retries) * 1000;
       await new Promise(resolve => setTimeout(resolve, delay));
+      return fetchWithRetry(url, options, retries - 1);
     }
+    throw error;
   }
-
-  throw lastError;
 }
 
 export const getWeatherData = async (
@@ -122,6 +119,13 @@ export const getWeatherData = async (
     }
 
     const sanitizedCity = cityValidation.sanitized!;
+
+    // Check client-side cache first
+    const cachedData = clientCache.getWeather(sanitizedCity, tempScale);
+    if (cachedData) {
+      console.log(`Using cached weather data for ${sanitizedCity}`);
+      return cachedData;
+    }
 
     // Construct URL with proper encoding
     const url = new URL(`${BACKEND_URL}/api/weather`);
@@ -165,11 +169,77 @@ export const getWeatherData = async (
       throw new Error('Incomplete weather data received');
     }
 
+    // Cache the successful response
+    clientCache.setWeather(sanitizedCity, tempScale, data);
+
     return data;
   } catch (error) {
-    // Only log critical errors, not user-facing ones
     if (error instanceof Error && !error.message.includes('City') && !error.message.includes('not found')) {
-      console.error('Weather API error:', error);
+      console.error('Weather API error:', error); // Log only critical errors
+    }
+    throw error;
+  }
+};
+
+export const getCityNameFromCoords = async (lat: number, lon: number): Promise<string> => {
+  try {
+    // Input validation
+    const coordValidation = validateCoordinates(lat, lon);
+    if (!coordValidation.valid) {
+      throw new Error(coordValidation.error);
+    }
+
+    // Check client-side cache first
+    const cachedData = clientCache.getGeocode(lat, lon);
+    if (cachedData) {
+      console.log(`Using cached geocode data for (${lat}, ${lon})`);
+      return cachedData.city;
+    }
+
+    // Construct URL with proper encoding
+    const url = new URL(`${BACKEND_URL}/api/geocode`);
+    url.searchParams.set('lat', lat.toString());
+    url.searchParams.set('lon', lon.toString());
+
+    const response = await fetchWithRetry(url.toString());
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+
+      // Handle specific error cases with user-friendly messages
+      if (response.status === 429) {
+        throw new Error('Too many requests. Please try again later.');
+      }
+
+      if (response.status === 400) {
+        throw new Error(errorData.error || 'Invalid coordinates');
+      }
+
+      if (response.status === 404) {
+        throw new Error('Location not found for these coordinates.');
+      }
+
+      if (response.status >= 500) {
+        throw new Error('Service temporarily unavailable. Please try again later.');
+      }
+
+      throw new Error(errorData.error || `Failed to get city name (${response.status})`);
+    }
+
+    const data = await response.json();
+
+    // Validate response structure
+    if (!data || typeof data !== 'object' || !data.city) {
+      throw new Error('Invalid response from geocoding service');
+    }
+
+    // Cache the successful response
+    clientCache.setGeocode(lat, lon, data);
+
+    return data.city;
+  } catch (error) {
+    if (error instanceof Error && !error.message.includes('Location') && !error.message.includes('not found')) {
+      console.error('Geocoding API error:', error); // Log only critical errors
     }
     throw error;
   }
@@ -186,48 +256,7 @@ export function getWeatherIconUrl(iconCode: string): string {
   return `https://openweathermap.org/img/wn/${iconCode}@2x.png`;
 }
 
-export const getCityNameFromCoords = async (lat: number, lon: number): Promise<string | null> => {
-  try {
-    // Input validation
-    const coordValidation = validateCoordinates(lat, lon);
-    if (!coordValidation.valid) {
-      return null;
-    }
-
-    // Construct URL with proper encoding
-    const url = new URL(`${BACKEND_URL}/api/geocode`);
-    url.searchParams.set('lat', lat.toString());
-    url.searchParams.set('lon', lon.toString());
-
-    const response = await fetchWithRetry(url.toString());
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-
-      if (response.status === 429) {
-        return null;
-      }
-
-      if (response.status === 404) {
-        return null;
-      }
-
-      return null;
-    }
-
-    const data = await response.json();
-
-    // Validate response structure
-    if (!data || typeof data !== 'object') {
-      return null;
-    }
-
-    return data.city || null;
-  } catch (error) {
-    // Only log critical errors
-    if (error instanceof Error && !error.message.includes('timeout')) {
-      console.error('Geocoding error:', error);
-    }
-    return null;
-  }
-};
+// Export cache utilities for debugging
+export const getCacheStats = () => clientCache.getStats();
+export const clearCache = () => clientCache.clear();
+export const exportCache = () => clientCache.exportCache();
