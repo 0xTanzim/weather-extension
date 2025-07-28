@@ -1,9 +1,9 @@
 import { getWeatherData } from '../utils/api';
 import {
-    getStoredCities,
-    getStoredOptions,
-    setStoredCities,
-    setStoreOptions,
+  getStoredCities,
+  getStoredOptions,
+  setStoredCities,
+  setStoreOptions,
 } from '../utils/storage';
 
 /**
@@ -58,11 +58,11 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === 'weatherUpdate') {
     try {
       const options = await getStoredOptions();
-      if (!options || options.homeCity === '') {
+      if (!options || !options.homeCity || options.homeCity === '') {
         return;
       }
 
-      const data = await getWeatherData(options.homeCity, options.tempScale);
+      const data = await getWeatherData(options.homeCity!, options.tempScale);
       if (data) {
         const tempText = `${Math.round(data.main.temp)}°${
           options.tempScale === 'metric' ? 'C' : 'F'

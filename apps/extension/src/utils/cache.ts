@@ -52,7 +52,9 @@ class ClientCache {
     // LRU eviction
     if (this.weatherCache.size >= this.config.maxSize) {
       const oldestKey = this.weatherCache.keys().next().value;
-      this.weatherCache.delete(oldestKey);
+      if (oldestKey !== undefined) {
+        this.weatherCache.delete(oldestKey);
+      }
     }
 
     this.weatherCache.set(key, {
@@ -86,7 +88,9 @@ class ClientCache {
     // LRU eviction
     if (this.geocodeCache.size >= this.config.maxSize) {
       const oldestKey = this.geocodeCache.keys().next().value;
-      this.geocodeCache.delete(oldestKey);
+      if (oldestKey !== undefined) {
+        this.geocodeCache.delete(oldestKey);
+      }
     }
 
     this.geocodeCache.set(key, {
@@ -155,11 +159,23 @@ class ClientCache {
     };
   }
 
-  // Export cache for debugging
+  // Export cache for debugging (compatible with older TypeScript targets)
   exportCache(): any {
+    const weatherObj: Record<string, any> = {};
+    const geocodeObj: Record<string, any> = {};
+
+    // Convert Maps to objects manually
+    for (const [key, value] of this.weatherCache.entries()) {
+      weatherObj[key] = value;
+    }
+
+    for (const [key, value] of this.geocodeCache.entries()) {
+      geocodeObj[key] = value;
+    }
+
     return {
-      weather: Object.fromEntries(this.weatherCache),
-      geocode: Object.fromEntries(this.geocodeCache),
+      weather: weatherObj,
+      geocode: geocodeObj,
       stats: this.getStats(),
     };
   }

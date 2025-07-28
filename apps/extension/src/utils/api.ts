@@ -118,18 +118,21 @@ export const getWeatherData = async (
       throw new Error('Invalid temperature scale');
     }
 
-    const sanitizedCity = cityValidation.sanitized!;
+    if (!cityValidation.sanitized) {
+      throw new Error('City validation failed');
+    }
+    const sanitized = cityValidation.sanitized!;
 
     // Check client-side cache first
-    const cachedData = clientCache.getWeather(sanitizedCity, tempScale);
+    const cachedData = clientCache.getWeather(sanitized, tempScale);
     if (cachedData) {
-      console.log(`Using cached weather data for ${sanitizedCity}`);
+      console.log(`Using cached weather data for ${sanitized}`);
       return cachedData;
     }
 
     // Construct URL with proper encoding
     const url = new URL(`${BACKEND_URL}/api/weather`);
-    url.searchParams.set('city', sanitizedCity);
+    url.searchParams.set('city', sanitized);
     url.searchParams.set('units', tempScale);
 
     const response = await fetchWithRetry(url.toString());
@@ -147,7 +150,7 @@ export const getWeatherData = async (
       }
 
       if (response.status === 404) {
-        throw new Error(`City "${sanitizedCity}" not found. Please check the spelling.`);
+        throw new Error(`City "${sanitized}" not found. Please check the spelling.`);
       }
 
       if (response.status >= 500) {
@@ -170,7 +173,7 @@ export const getWeatherData = async (
     }
 
     // Cache the successful response
-    clientCache.setWeather(sanitizedCity, tempScale, data);
+    clientCache.setWeather(sanitized, tempScale, data);
 
     return data;
   } catch (error) {
