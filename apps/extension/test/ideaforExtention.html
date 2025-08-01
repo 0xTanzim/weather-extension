@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Weather Extension</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap');
+      body {
+        font-family: 'Poppins', sans-serif;
+        width: 400px;
+        min-height: 600px;
+        background: linear-gradient(to bottom right, #1e40af, #3b82f6);
+        color: white;
+        padding: 16px;
+        margin: 0;
+        overflow-x: hidden;
+      }
+      .glassmorphism {
+        background: rgba(255, 255, 255, 0.15);
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+        border-radius: 12px;
+        padding: 16px;
+      }
+      .weather-animate {
+        animation: fadeIn 0.5s ease-in-out;
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .spinner {
+        border: 4px solid rgba(255, 255, 255, 0.3);
+        border-top: 4px solid white;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        animation: spin 1s linear infinite;
+        display: none;
+      }
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+      .carousel {
+        display: flex;
+        overflow-x: hidden;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      .carousel::-webkit-scrollbar {
+        display: none;
+      }
+      .carousel > div {
+        flex: 0 0 100%;
+        scroll-snap-align: center;
+      }
+      .arrow {
+        background: rgba(255, 255, 255, 0.2);
+        transition: background 0.3s ease;
+      }
+      .arrow:hover {
+        background: rgba(255, 255, 255, 0.4);
+      }
+      #error {
+        color: red;
+        text-align: center;
+        margin-top: 10px;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="error"></div>
+
+    <script type="text/babel">
+      const { useState, useEffect, useRef } = React;
+
+      // Dummy data mimicking OpenWeatherAPI structure
+      const defaultCities = [
+        {
+          name: 'London',
+          main: { temp: 25, feels_like: 23, humidity: 60 },
+          weather: [{ description: 'clear sky', icon: '01d' }],
+          wind: { speed: 5 },
+          sys: { sunrise: 1698745432, sunset: 1698785432 },
+          dt: 1698765432,
+        },
+        {
+          name: 'New York',
+          main: { temp: 22, feels_like: 20, humidity: 65 },
+          weather: [{ description: 'partly cloudy', icon: '02d' }],
+          wind: { speed: 6 },
+          sys: { sunrise: 1698746432, sunset: 1698786432 },
+          dt: 1698765432,
+        },
+      ];
+
+      const dummyForecastData = {
+        list: [
+          {
+            dt: 1698765432 + 86400,
+            main: { temp: 23 },
+            weather: [{ description: 'partly cloudy', icon: '02d' }],
+          },
+          {
+            dt: 1698765432 + 2 * 86400,
+            main: { temp: 22 },
+            weather: [{ description: 'light rain', icon: '10d' }],
+          },
+          {
+            dt: 1698765432 + 3 * 86400,
+            main: { temp: 24 },
+            weather: [{ description: 'clear sky', icon: '01d' }],
+          },
+          {
+            dt: 1698765432 + 4 * 86400,
+            main: { temp: 21 },
+            weather: [{ description: 'scattered clouds', icon: '03d' }],
+          },
+          {
+            dt: 1698765432 + 5 * 86400,
+            main: { temp: 20 },
+            weather: [{ description: 'broken clouds', icon: '04d' }],
+          },
+        ],
+      };
+
+      // Utility functions
+      const formatDate = (timestamp) => {
+        try {
+          const date = new Date(timestamp * 1000);
+          return date.toLocaleDateString('en-US', {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+          });
+        } catch (e) {
+          console.error('Error formatting date:', e);
+          return 'Invalid Date';
+        }
+      };
+
+      const formatTime = (timestamp) => {
+        try {
+          const date = new Date(timestamp * 1000);
+          return date.toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: 'numeric',
+          });
+        } catch (e) {
+          console.error('Error formatting time:', e);
+          return 'Invalid Time';
+        }
+      };
+
+      const getWeatherIcon = (iconCode) =>
+        `https://openweathermap.org/img/wn/${iconCode}@2x.png`;
+
+      const setDynamicBackground = (description) => {
+        try {
+          const body = document.body;
+          if (description.includes('clear')) {
+            body.style.background =
+              'linear-gradient(to bottom right, #f59e0b, #3b82f6)';
+          } else if (description.includes('cloud')) {
+            body.style.background =
+              'linear-gradient(to bottom right, #4b5563, #1e40af)';
+          } else if (description.includes('rain')) {
+            body.style.background =
+              'linear-gradient(to bottom right, #1e3a8a, #4b5563)';
+          } else {
+            body.style.background =
+              'linear-gradient(to bottom right, #1e40af, #3b82f6)';
+          }
+        } catch (e) {
+          console.error('Error setting background:', e);
+        }
+      };
+
+      const convertTemperature = (temp, toCelsius) => {
+        try {
+          return toCelsius ? temp : Math.round((temp * 9) / 5 + 32);
+        } catch (e) {
+          console.error('Error converting temperature:', e);
+          return temp;
+        }
+      };
+
+      // ErrorBoundary Component
+      const ErrorBoundary = ({ children }) => {
+        const [error, setError] = useState(null);
+
+        React.useEffect(() => {
+          window.onerror = (message) => {
+            setError(message);
+            console.error('Global error:', message);
+          };
+          return () => {
+            window.onerror = null;
+          };
+        }, []);
+
+        if (error) {
+          return <div id="error">Error: {error}</div>;
+        }
+        return children;
+      };
+
+      // SearchBar Component
+      const SearchBar = ({ addCity }) => {
+        const [cityInput, setCityInput] = useState('');
+        const [isLoading, setIsLoading] = useState(false);
+
+        const handleAddCity = async () => {
+          try {
+            if (!cityInput.trim()) {
+              alert('Please enter a city name!');
+              return;
+            }
+            setIsLoading(true);
+            await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulate API delay
+            addCity(cityInput.trim());
+            setCityInput('');
+          } catch (e) {
+            console.error('Error adding city:', e);
+          } finally {
+            setIsLoading(false);
+          }
+        };
+
+        return (
+          <div className="flex items-center mb-4">
+            <input
+              type="text"
+              value={cityInput}
+              onChange={(e) => setCityInput(e.target.value)}
+              placeholder="Enter city name..."
+              className="w-full bg-transparent border-b border-white/40 text-white placeholder-white/60 focus:outline-none py-2 text-sm"
+            />
+            <button
+              onClick={handleAddCity}
+              className="ml-2 bg-transparent border border-white/40 hover:bg-white/20 px-3 py-1 rounded-full transition-all duration-300 flex items-center text-xs"
+            >
+              <span>{isLoading ? '' : 'Add City'}</span>
+              <div
+                className={`spinner ml-2 ${isLoading ? 'block' : 'hidden'}`}
+              ></div>
+            </button>
+          </div>
+        );
+      };
+
+      // UnitToggle Component
+      const UnitToggle = ({ isCelsius, toggleUnit }) => (
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={toggleUnit}
+            className="text-xs bg-white/20 hover:bg-white/30 px-2 py-1 rounded-full transition-all duration-300"
+          >
+            {isCelsius ? '°C / °F' : '°F / °C'}
+          </button>
+        </div>
+      );
+
+      // WeatherCard Component
+      const WeatherCard = ({ data, index, removeCity, isCelsius }) => (
+        <div className="p-4 weather-animate" data-index={index}>
+          <div className="flex justify-between items-center">
+            <h1 className="text-xl font-semibold">{data.name}</h1>
+            <button
+              onClick={() => removeCity(index)}
+              className="text-xs bg-transparent border border-red-400/50 hover:bg-red-400/20 px-2 py-1 rounded-full transition-all duration-300"
+            >
+              Remove
+            </button>
+          </div>
+          <p className="text-xs opacity-80">{formatDate(data.dt)}</p>
+          <div className="flex justify-center items-center my-4">
+            <img
+              src={getWeatherIcon(data.weather[0].icon)}
+              alt="Weather Icon"
+              className="w-12 h-12"
+            />
+            <p className="text-3xl font-light ml-3">
+              {convertTemperature(data.main.temp, isCelsius)}
+              {isCelsius ? '°C' : '°F'}
+            </p>
+          </div>
+          <p className="text-sm capitalize text-center">
+            {data.weather[0].description}
+          </p>
+          <div className="grid grid-cols-2 gap-2 mt-4 text-xs">
+            <div>
+              <p className="opacity-80">Feels Like</p>
+              <p className="font-semibold">
+                {convertTemperature(data.main.feels_like, isCelsius)}
+                {isCelsius ? '°C' : '°F'}
+              </p>
+            </div>
+            <div>
+              <p className="opacity-80">Humidity</p>
+              <p className="font-semibold">{data.main.humidity}%</p>
+            </div>
+            <div>
+              <p className="opacity-80">Wind Speed</p>
+              <p className="font-semibold">{data.wind.speed} km/h</p>
+            </div>
+            <div>
+              <p className="opacity-80">Sunrise/Sunset</p>
+              <p className="font-semibold">
+                {formatTime(data.sys.sunrise)} / {formatTime(data.sys.sunset)}
+              </p>
+            </div>
+          </div>
+          <div className="mt-6">
+            <h2 className="text-sm font-semibold mb-2">5-Day Forecast</h2>
+            <div className="grid grid-cols-5 gap-1 text-center text-xs">
+              {dummyForecastData.list.map((day, idx) => (
+                <div
+                  key={idx}
+                  className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-all duration-300"
+                >
+                  <p className="font-semibold">{formatDate(day.dt)}</p>
+                  <img
+                    src={getWeatherIcon(day.weather[0].icon)}
+                    alt="Weather Icon"
+                    className="w-8 h-8 mx-auto"
+                  />
+                  <p>
+                    {convertTemperature(day.main.temp, isCelsius)}
+                    {isCelsius ? '°C' : '°F'}
+                  </p>
+                  <p className="capitalize text-[10px]">
+                    {day.weather[0].description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+
+      // Carousel Component
+      const Carousel = ({
+        cities,
+        currentIndex,
+        setCurrentIndex,
+        removeCity,
+        isCelsius,
+      }) => {
+        const carouselRef = useRef(null);
+
+        useEffect(() => {
+          try {
+            if (carouselRef.current) {
+              carouselRef.current.scrollTo({
+                left: currentIndex * carouselRef.current.offsetWidth,
+                behavior: 'smooth',
+              });
+            }
+            setDynamicBackground(
+              cities[currentIndex]?.weather[0]?.description || 'clear sky'
+            );
+          } catch (e) {
+            console.error('Error in carousel useEffect:', e);
+          }
+        }, [currentIndex, cities]);
+
+        const prevCard = () => {
+          if (currentIndex > 0) {
+            setCurrentIndex(currentIndex - 1);
+          }
+        };
+
+        const nextCard = () => {
+          if (currentIndex < cities.length - 1) {
+            setCurrentIndex(currentIndex + 1);
+          }
+        };
+
+        const scrollToCard = (index) => {
+          setCurrentIndex(index);
+        };
+
+        return (
+          <div className="relative flex items-center">
+            <button
+              onClick={prevCard}
+              className={`arrow absolute left-0 -ml-8 p-2 rounded-full z-10 ${currentIndex === 0 ? 'hidden' : 'block'}`}
+            >
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="white"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M15 19l-7-7 7-7"
+                ></path>
+              </svg>
+            </button>
+            <div ref={carouselRef} className="carousel w-full">
+              {cities.map((data, index) => (
+                <WeatherCard
+                  key={index}
+                  data={data}
+                  index={index}
+                  removeCity={removeCity}
+                  isCelsius={isCelsius}
+                />
+              ))}
+            </div>
+            <button
+              onClick={nextCard}
+              className={`arrow absolute right-0 -mr-8 p-2 rounded-full z-10 ${currentIndex === cities.length - 1 ? 'hidden' : 'block'}`}
+            >
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="white"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M9 5l7 7-7 7"
+                ></path>
+              </svg>
+            </button>
+            <div className="flex justify-center mt-4 space-x-2">
+              {cities.map((_, index) => (
+                <div
+                  key={index}
+                  onClick={() => scrollToCard(index)}
+                  className={`w-2 h-2 rounded-full ${index === currentIndex ? 'bg-white' : 'bg-white/50'} cursor-pointer`}
+                ></div>
+              ))}
+            </div>
+          </div>
+        );
+      };
+
+      // Main App Component
+      const App = () => {
+        const [cities, setCities] = useState(() => {
+          try {
+            return (
+              JSON.parse(localStorage.getItem('weatherCities')) || defaultCities
+            );
+          } catch (e) {
+            console.error('Error loading cities from localStorage:', e);
+            return defaultCities;
+          }
+        });
+        const [currentIndex, setCurrentIndex] = useState(0);
+        const [isCelsius, setIsCelsius] = useState(true);
+
+        useEffect(() => {
+          try {
+            localStorage.setItem('weatherCities', JSON.stringify(cities));
+          } catch (e) {
+            console.error('Error saving cities to localStorage:', e);
+          }
+        }, [cities]);
+
+        const addCity = (cityName) => {
+          try {
+            if (
+              cities.some(
+                (city) => city.name.toLowerCase() === cityName.toLowerCase()
+              )
+            ) {
+              alert('City already added!');
+              return;
+            }
+            const newCity = {
+              ...defaultCities[0],
+              name: cityName,
+              main: {
+                ...defaultCities[0].main,
+                temp: Math.round(Math.random() * 10 + 15),
+              },
+              dt: Math.floor(Date.now() / 1000),
+            };
+            setCities([...cities, newCity]);
+            setCurrentIndex(cities.length);
+          } catch (e) {
+            console.error('Error adding city:', e);
+          }
+        };
+
+        const removeCity = (index) => {
+          try {
+            if (cities.length === 1) {
+              alert('At least one city must remain!');
+              return;
+            }
+            const newCities = cities.filter((_, i) => i !== index);
+            setCities(newCities);
+            setCurrentIndex(Math.min(currentIndex, newCities.length - 1));
+          } catch (e) {
+            console.error('Error removing city:', e);
+          }
+        };
+
+        const toggleUnit = () => {
+          try {
+            setIsCelsius(!isCelsius);
+          } catch (e) {
+            console.error('Error toggling unit:', e);
+          }
+        };
+
+        return (
+          <ErrorBoundary>
+            <div className="glassmorphism">
+              <SearchBar addCity={addCity} />
+              <UnitToggle isCelsius={isCelsius} toggleUnit={toggleUnit} />
+              <Carousel
+                cities={cities}
+                currentIndex={currentIndex}
+                setCurrentIndex={setCurrentIndex}
+                removeCity={removeCity}
+                isCelsius={isCelsius}
+              />
+            </div>
+          </ErrorBoundary>
+        );
+      };
+
+      // Render the app
+      try {
+        ReactDOM.render(<App />, document.getElementById('root'));
+        console.log('Weather Extension rendered successfully');
+      } catch (e) {
+        console.error('Error rendering Weather Extension:', e);
+        document.getElementById('error').textContent =
+          'Failed to render extension. Check console for details.';
+      }
+    </script>
+  </body>
+</html>

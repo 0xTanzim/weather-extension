@@ -1,161 +1,187 @@
-import CloseIcon from '@mui/icons-material/Close';
-import { Box, IconButton, Typography } from '@mui/material';
-import React, { useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import WeatherCard from '../components/WeatherCard';
 import { Messages } from '../utils/messages';
-import { getStoredOptions, LocalStorageOptions } from '../utils/storage';
+import { getStoredOptions } from '../utils/storage';
+import WeatherCard from '../v2/components/WeatherCard';
 
 import './contentScript.css';
 
-const OVERLAY_ID = 'weather-extension-overlay';
+// Global overlay state
+let overlayVisible = false;
+let overlayElement: HTMLElement | null = null;
+let isDragging = false;
+let dragStart = { x: 0, y: 0 };
 
-const Overlay: React.FC<{
-  options: LocalStorageOptions;
-  onClose: () => void;
-}> = ({ options, onClose }) => {
-  const overlayRef = useRef<HTMLDivElement>(null);
-  const isDragging = useRef(false);
-  const dragStart = useRef({ x: 0, y: 0 });
-
-  useEffect(() => {
-    const handleMouseDown = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.closest('.drag-handle')) {
-        isDragging.current = true;
-        dragStart.current = { x: e.clientX, y: e.clientY };
-        document.body.style.cursor = 'grabbing';
-      }
-    };
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isDragging.current && overlayRef.current) {
-        const deltaX = e.clientX - dragStart.current.x;
-        const deltaY = e.clientY - dragStart.current.y;
-
-        const rect = overlayRef.current.getBoundingClientRect();
-        const newLeft = rect.left + deltaX;
-        const newTop = rect.top + deltaY;
-
-        overlayRef.current.style.left = `${newLeft}px`;
-        overlayRef.current.style.top = `${newTop}px`;
-
-        dragStart.current = { x: e.clientX, y: e.clientY };
-      }
-    };
-
-    const handleMouseUp = () => {
-      isDragging.current = false;
-      document.body.style.cursor = 'default';
-    };
-
-    document.addEventListener('mousedown', handleMouseDown);
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      document.removeEventListener('mousedown', handleMouseDown);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, []);
-
-  if (!options.homeCity) {
-    return (
-      <div className="overlayCard" ref={overlayRef}>
-        <Box p={2} textAlign="center">
-          <Typography variant="h6" color="inherit">Set your default location in extension options.</Typography>
-        </Box>
-      </div>
-    );
-  }
-
-  return (
-    <div className="overlayCard" ref={overlayRef}>
-      <Box display="flex" justifyContent="space-between" alignItems="center" px={1} className="drag-handle">
-        <Box display="flex" alignItems="center" gap={1}>
-          <Typography variant="caption" color="inherit" sx={{ opacity: 0.8 }}>
-            Drag to move
-          </Typography>
-        </Box>
-        <IconButton size="small" onClick={onClose} aria-label="Close overlay">
-          <CloseIcon fontSize="small" />
-        </IconButton>
-      </Box>
-      <WeatherCard
-        city={options.homeCity}
-        tempScale={options.tempScale}
-        onDelete={onClose}
-        overlayMode
-      />
-    </div>
-  );
-};
-
-function mountOverlay(options: LocalStorageOptions) {
-  const existing = document.getElementById(OVERLAY_ID);
-  if (existing) return;
-
-  const rootDiv = document.createElement('div');
-  rootDiv.id = OVERLAY_ID;
-  document.body.appendChild(rootDiv);
-
-  const root = createRoot(rootDiv);
-  root.render(
-    <Overlay
-      options={options}
-      onClose={() => {
-        root.unmount();
-        rootDiv.remove();
-      }}
-    />
-  );
+// Drag event handlers
+function startDrag(e: MouseEvent) {
+  console.log('Drag started');
+  isDragging = true;
+  dragStart = { x: e.clientX, y: e.clientY };
+  const header = e.target as HTMLElement;
+  header.style.cursor = 'grabbing';
+  e.preventDefault();
 }
 
-function removeOverlay() {
-  const existing = document.getElementById(OVERLAY_ID);
-  if (existing) {
-    const root = createRoot(existing);
-    root.unmount();
-    existing.remove();
+function drag(e: MouseEvent) {
+  if (!isDragging || !overlayElement) return;
+
+  const deltaX = e.clientX - dragStart.x;
+  const deltaY = e.clientY - dragStart.y;
+
+  const rect = overlayElement.getBoundingClientRect();
+  const newLeft = rect.left + deltaX;
+  const newTop = rect.top + deltaY;
+
+  // Keep overlay within viewport bounds
+  const maxX = window.innerWidth - rect.width;
+  const maxY = window.innerHeight - rect.height;
+
+  overlayElement.style.left = `${Math.max(0, Math.min(newLeft, maxX))}px`;
+  overlayElement.style.top = `${Math.max(0, Math.min(newTop, maxY))}px`;
+
+  dragStart = { x: e.clientX, y: e.clientY };
+}
+
+function stopDrag() {
+  console.log('Drag stopped');
+  isDragging = false;
+  if (overlayElement) {
+    const header = overlayElement.querySelector('.drag-handle') as HTMLElement;
+    if (header) {
+      header.style.cursor = 'grab';
+    }
   }
 }
 
-function setupListener() {
-  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (msg === Messages.TOGGLE_OVERLAY) {
-      const existing = document.getElementById(OVERLAY_ID);
-      if (existing) {
-        removeOverlay();
-        sendResponse({ success: true, action: 'removed' });
-      } else {
-        getStoredOptions().then((options) => {
+// Draggable overlay functionality
+function makeDraggable(element: HTMLElement) {
+  // Remove existing event listeners to prevent duplicates
+  const header = element.querySelector('.drag-handle') as HTMLElement;
+  if (!header) {
+    console.log('No drag handle found');
+    return;
+  }
+
+  // Remove existing listeners
+  header.removeEventListener('mousedown', startDrag);
+  document.removeEventListener('mousemove', drag);
+  document.removeEventListener('mouseup', stopDrag);
+
+  header.style.cursor = 'grab';
+  header.addEventListener('mousedown', startDrag);
+  document.addEventListener('mousemove', drag);
+  document.addEventListener('mouseup', stopDrag);
+
+  console.log('Draggable functionality attached');
+}
+
+// Close overlay function
+function closeOverlay() {
+  if (overlayElement) {
+    // Remove event listeners before removing element
+    const header = overlayElement.querySelector('.drag-handle') as HTMLElement;
+    if (header) {
+      header.removeEventListener('mousedown', startDrag);
+      document.removeEventListener('mousemove', drag);
+      document.removeEventListener('mouseup', stopDrag);
+    }
+    overlayElement.remove();
+    overlayElement = null;
+  }
+  overlayVisible = false;
+}
+
+// Listen for messages from the popup
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request === Messages.TOGGLE_OVERLAY) {
+    if (overlayVisible) {
+      // Remove overlay
+      closeOverlay();
+      sendResponse({ success: true, action: 'removed' });
+    } else {
+      // Create overlay
+      getStoredOptions()
+        .then((options) => {
           if (options && options.homeCity) {
-            mountOverlay(options);
+            // Remove existing overlay if any
+            if (overlayElement) {
+              closeOverlay();
+            }
+
+            // Create overlay element
+            overlayElement = document.createElement('div');
+            overlayElement.id = 'weather-overlay';
+            overlayElement.className = 'overlayCard';
+            overlayElement.style.position = 'fixed';
+            overlayElement.style.top = '20px';
+            overlayElement.style.right = '20px';
+            overlayElement.style.zIndex = '9999';
+            overlayElement.style.width = '240px';
+            overlayElement.style.background =
+              'linear-gradient(135deg, #1e293b 0%, #334155 50%, #1e293b 100%)';
+            overlayElement.style.borderRadius = '12px';
+            overlayElement.style.boxShadow =
+              '0 8px 32px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.2)';
+            overlayElement.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+            overlayElement.style.backdropFilter = 'blur(20px)';
+            overlayElement.style.fontFamily = "'Poppins', sans-serif";
+            document.body.appendChild(overlayElement);
+
+            const root = createRoot(overlayElement);
+            root.render(
+              <div className="p-3 text-white">
+                <div className="flex justify-between items-center mb-2 drag-handle">
+                  <h3 className="text-sm font-semibold text-shadow-sm">
+                    🌤️ Weather
+                  </h3>
+                  <button
+                    onClick={closeOverlay}
+                    className="text-red-400 hover:text-red-300 transition-colors duration-200 hover:scale-110"
+                    title="Close overlay"
+                    style={{ zIndex: 10001 }}
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                  </button>
+                </div>
+
+                <WeatherCard
+                  city={options.homeCity}
+                  tempScale={options.tempScale}
+                  overlayMode={true}
+                />
+              </div>
+            );
+
+            // Make overlay draggable with a longer delay to ensure DOM is ready
+            setTimeout(() => {
+              if (overlayElement) {
+                makeDraggable(overlayElement);
+              }
+            }, 200);
+
+            overlayVisible = true;
             sendResponse({ success: true, action: 'mounted' });
           } else {
             sendResponse({ success: false, error: 'No home city set' });
           }
-        }).catch((error) => {
+        })
+        .catch((error) => {
           console.error('Error getting options:', error);
           sendResponse({ success: false, error: 'Failed to get options' });
         });
-      }
-      return true; // Keep the message channel open for async response
     }
-  });
-}
-
-// Only run script if content script is injected properly
-getStoredOptions()
-  .then((options) => {
-    if (options?.hasAutoOverlay && options.homeCity) {
-      mountOverlay(options);
-    }
-  })
-  .catch((error) => {
-    console.error('Error in content script initialization:', error);
-  });
-
-setupListener();
+  }
+  return true; // Keep the message channel open for async response
+});

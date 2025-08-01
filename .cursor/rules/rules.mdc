@@ -1,0 +1,37 @@
+---
+alwaysApply: true
+---
+
+code must be written in typescript.
+
+for refactore we are move old code into a seperate directory and create a new file for the new code.
+
+no duplicate code. no duplicate files. no duplicate functions. no duplicate classes. no duplicate variables. no duplicate constants. no duplicate imports. no duplicate exports. no duplicate anything.
+
+makes sure code is clean and readable.
+
+UI must be responsive.
+
+since we are build a chrome extension we must use the chrome extension api.
+
+show the chrome extension api documentation when we are using it.
+
+makes sure the UI are fit the chrome extension api.
+
+
+
+====
+
+project are doing with pnpm. so we must use pnpm to install dependencies.
+
+
+
+
+
+
+====
+
+
+idea.html and ideaforExtention.html are the idea for the chrome extension.
+
+get the idea from the idea.html and ideaforExtention.html and create a new file for the new code. and makes sure the UI are fit the chrome extension api. 

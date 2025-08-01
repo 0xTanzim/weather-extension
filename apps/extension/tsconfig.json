@@ -10,6 +10,17 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules"]
+  "include": [
+    "src/v2/**/*",
+    "src/background/**/*",
+    "src/contentScript/**/*",
+    "src/options/**/*",
+    "src/utils/**/*",
+    "src/types/**/*",
+    "src/static/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "src/v1/**/*"
+  ]
 }

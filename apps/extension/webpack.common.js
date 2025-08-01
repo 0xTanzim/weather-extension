@@ -6,15 +6,13 @@ const webpack = require('webpack');
 const dotenv = require('dotenv');
 dotenv.config();
 
-
 // Ensure environment variables are properly loaded
 const apiKey = process.env.OPEN_WEATHER_API_KEY || '';
 const apiKeys = process.env.OPEN_WEATHER_API_KEYS || '';
 
-
 module.exports = {
   entry: {
-    popup: path.resolve('src/popup/popup.tsx'),
+    popup: path.resolve('src/v2/popup/PopupApp.tsx'),
     options: path.resolve('src/options/options.tsx'),
     background: path.resolve('src/background/background.ts'),
     contentScript: path.resolve('src/contentScript/contentScript.tsx'),
@@ -28,7 +26,21 @@ module.exports = {
       },
       {
         test: /\.css$/i,
-        use: ['style-loader', 'css-loader'],
+        use: [
+          'style-loader',
+          'css-loader',
+          {
+            loader: 'postcss-loader',
+            options: {
+              postcssOptions: {
+                plugins: [
+                  require('tailwindcss'),
+                  require('autoprefixer'),
+                ],
+              },
+            },
+          },
+        ],
       },
       {
         test: /\.(jpg|jpeg|png|woff|woff2|eot|ttf|svg)$/,
@@ -58,7 +70,17 @@ module.exports = {
       'process.env.OPEN_WEATHER_API_KEYS': JSON.stringify(apiKeys),
     }),
 
-    ...getHtmlPlugins(['popup', 'options']),
+    new HtmlPlugin({
+      title: 'Weather Extension',
+      filename: 'popup.html',
+      template: path.resolve('src/v2/popup/popup.html'),
+      chunks: ['popup'],
+    }),
+    new HtmlPlugin({
+      title: 'React Extension',
+      filename: 'options.html',
+      chunks: ['options'],
+    }),
   ],
   output: {
     filename: '[name].js',
@@ -71,15 +93,9 @@ module.exports = {
       },
     },
   },
+  // Exclude v1 files from build
+  externals: {
+    '../v1/components/WeatherCard': 'commonjs2 ../v1/components/WeatherCard',
+    '../v1/popup/popup': 'commonjs2 ../v1/popup/popup',
+  },
 };
-
-function getHtmlPlugins(chunks) {
-  return chunks.map(
-    (chunk) =>
-      new HtmlPlugin({
-        title: 'React Extension',
-        filename: `${chunk}.html`,
-        chunks: [chunk],
-      })
-  );
-}
