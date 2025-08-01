@@ -2,8 +2,8 @@ import { OpenWeatherData, OpenWeatherTempScale } from '../types/open_weather';
 import { clientCache } from './cache';
 
 // Your Vercel backend URL - replace with your actual URL after deployment
-// const BACKEND_URL = 'https://weather-extentions-backend.vercel.app';
-const BACKEND_URL = 'http://localhost:3000';
+const BACKEND_URL = 'https://weather-extentions-backend.vercel.app';
+// const BACKEND_URL = 'http://localhost:3000';
 
 // Security configuration
 const SECURITY_CONFIG = {
