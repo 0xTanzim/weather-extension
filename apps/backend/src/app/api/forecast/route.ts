@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import apiKeyManager from '../../../utils/apiKeyManager';
+
+// Lazy import to avoid initialization errors during testing
+let apiKeyManager: any;
+function getApiKeyManager() {
+  if (!apiKeyManager) {
+    apiKeyManager = require('../../../utils/apiKeyManager').default;
+  }
+  return apiKeyManager;
+}
 
 // Rate limiting in memory (in production, use Redis or similar)
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
@@ -56,6 +64,13 @@ function validateInput(
   const trimmed = city.trim();
   if (trimmed.length === 0) {
     return { valid: false, error: 'City cannot be empty' };
+  }
+
+  if (trimmed.length < 2) {
+    return {
+      valid: false,
+      error: 'City name must be at least 2 characters long',
+    };
   }
 
   if (trimmed.length > SECURITY_CONFIG.MAX_CITY_LENGTH) {
@@ -170,7 +185,7 @@ export async function GET(request: NextRequest) {
     const sanitizedUnits = units!;
 
     // Get API key using round-robin rotation
-    const apiKey = apiKeyManager.getNextKey();
+    const apiKey = getApiKeyManager().getNextKey();
 
     // Build OpenWeather API URL for 5-day forecast
     const forecastUrl = new URL(
@@ -180,82 +195,131 @@ export async function GET(request: NextRequest) {
     forecastUrl.searchParams.set('units', sanitizedUnits);
     forecastUrl.searchParams.set('appid', apiKey);
 
-    // Fetch with timeout
+    // Fetch with timeout and retry logic for API key rotation
     const controller = new AbortController();
     const timeoutId = setTimeout(
       () => controller.abort(),
       SECURITY_CONFIG.REQUEST_TIMEOUT
     );
 
-    const response = await fetch(forecastUrl.toString(), {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Weather-Extension-Backend/1.0',
-      },
-    });
+    let response;
+    let currentApiKey = apiKey;
+    let retryCount = 0;
+    const maxRetries = getApiKeyManager().getActiveKeyCount() - 1;
 
-    clearTimeout(timeoutId);
+    while (retryCount <= maxRetries) {
+      try {
+        // Update API key in URL for retries
+        forecastUrl.searchParams.set('appid', currentApiKey);
 
-    // Handle different response status codes
-    if (response.status === 401) {
-      apiKeyManager.recordError(apiKey, 'Invalid API key');
-      return NextResponse.json(
-        { error: 'Weather service temporarily unavailable' },
-        {
-          status: 503,
-          headers: getNoCacheHeaders(),
-        }
-      );
-    }
-
-    if (response.status === 404) {
-      // Cache 404 responses briefly to avoid hammering
-      return NextResponse.json(
-        { error: 'City not found' },
-        {
-          status: 404,
+        response = await fetch(forecastUrl.toString(), {
+          signal: controller.signal,
           headers: {
-            ...getCacheHeaders(CACHE_CONFIG.ERROR_CACHE_DURATION),
-            'X-Cache-Source': 'error-cache',
+            'User-Agent': 'Weather-Extension-Backend/1.0',
           },
-        }
-      );
-    }
+        });
 
-    if (response.status === 429) {
-      apiKeyManager.recordError(apiKey, 'Rate limit exceeded');
-      return NextResponse.json(
-        { error: 'Weather service temporarily unavailable' },
-        {
-          status: 503,
-          headers: getNoCacheHeaders(),
-        }
-      );
-    }
+        clearTimeout(timeoutId);
 
-    if (response.status === 500) {
-      apiKeyManager.recordError(apiKey, 'OpenWeather API error');
-      return NextResponse.json(
-        { error: 'Weather service temporarily unavailable' },
-        {
-          status: 503,
-          headers: getNoCacheHeaders(),
-        }
-      );
-    }
+        // Handle different response status codes
+        if (response.status === 401) {
+          getApiKeyManager().recordError(currentApiKey, 'Invalid API key');
 
-    if (!response.ok) {
-      apiKeyManager.recordError(apiKey, `HTTP ${response.status}`);
-      return NextResponse.json(
-        { error: 'Weather service temporarily unavailable' },
-        {
-          status: 503,
-          headers: getNoCacheHeaders(),
+          // Try next API key if available
+          if (retryCount < maxRetries) {
+            retryCount++;
+            currentApiKey = getApiKeyManager().getNextKey();
+            console.log(
+              `Retrying with API key ${retryCount + 1}/${maxRetries + 1}`
+            );
+            continue;
+          } else {
+            // No more API keys to try
+            return NextResponse.json(
+              { error: 'Weather service temporarily unavailable' },
+              {
+                status: 503,
+                headers: getNoCacheHeaders(),
+              }
+            );
+          }
         }
-      );
+
+        // For other errors, don't retry
+        if (response.status === 404) {
+          // Cache 404 responses briefly to avoid hammering
+          return NextResponse.json(
+            {
+              error: `City "${sanitizedCity}" not found. Please check the spelling.`,
+            },
+            {
+              status: 404,
+              headers: {
+                ...getCacheHeaders(CACHE_CONFIG.ERROR_CACHE_DURATION),
+                'X-Cache-Source': 'error-cache',
+              },
+            }
+          );
+        }
+
+        if (response.status === 429) {
+          getApiKeyManager().recordError(currentApiKey, 'Rate limit exceeded');
+          return NextResponse.json(
+            { error: 'Weather service temporarily unavailable' },
+            {
+              status: 503,
+              headers: getNoCacheHeaders(),
+            }
+          );
+        }
+
+        if (response.status === 500) {
+          getApiKeyManager().recordError(
+            currentApiKey,
+            'OpenWeather API error'
+          );
+          return NextResponse.json(
+            { error: 'Weather service temporarily unavailable' },
+            {
+              status: 503,
+              headers: getNoCacheHeaders(),
+            }
+          );
+        }
+
+        if (!response.ok) {
+          getApiKeyManager().recordError(
+            currentApiKey,
+            `HTTP ${response.status}`
+          );
+          return NextResponse.json(
+            { error: 'Weather service temporarily unavailable' },
+            {
+              status: 503,
+              headers: getNoCacheHeaders(),
+            }
+          );
+        }
+
+        // Success - break out of retry loop
+        break;
+      } catch (error) {
+        clearTimeout(timeoutId);
+        throw error;
+      }
     }
 
     // Parse response
+    if (!response) {
+      return NextResponse.json(
+        { error: 'Failed to fetch forecast data' },
+        {
+          status: 500,
+          headers: getNoCacheHeaders(),
+        }
+      );
+    }
+    
     const data = await response.json();
 
     // Validate response structure
@@ -265,9 +329,12 @@ export async function GET(request: NextRequest) {
       !data.list ||
       !Array.isArray(data.list)
     ) {
-      apiKeyManager.recordError(apiKey, 'Invalid response structure');
+      getApiKeyManager().recordError(
+        currentApiKey,
+        'Invalid response structure'
+      );
       return NextResponse.json(
-        { error: 'Invalid forecast data received' },
+        { error: 'Invalid response structure from OpenWeather API' },
         {
           status: 500,
           headers: getNoCacheHeaders(),
@@ -343,7 +410,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Record successful request
-    apiKeyManager.recordSuccess(apiKey);
+    getApiKeyManager().recordSuccess(currentApiKey);
 
     // Add security headers and timing info
     const processingTime = Date.now() - startTime;
@@ -364,7 +431,9 @@ export async function GET(request: NextRequest) {
           'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
           'X-Processing-Time': processingTime.toString(),
           'X-Cache-Source': 'vercel-cdn',
-          'X-API-Keys-Available': apiKeyManager.getActiveKeyCount().toString(),
+          'X-API-Keys-Available': getApiKeyManager()
+            .getActiveKeyCount()
+            .toString(),
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
           'Access-Control-Allow-Headers':
@@ -374,14 +443,37 @@ export async function GET(request: NextRequest) {
       }
     );
   } catch (error) {
-    console.error('Forecast API error:', error);
-
     // Handle timeout
-    if (error instanceof Error && error.name === 'AbortError') {
+    if (
+      error instanceof Error &&
+      (error.name === 'AbortError' || error.message.includes('Request timeout'))
+    ) {
       return NextResponse.json(
         { error: 'Request timeout' },
         {
-          status: 408,
+          status: 500,
+          headers: getNoCacheHeaders(),
+        }
+      );
+    }
+
+    // Handle network errors
+    if (error instanceof Error && error.message.includes('Network error')) {
+      return NextResponse.json(
+        { error: 'Failed to fetch forecast data' },
+        {
+          status: 500,
+          headers: getNoCacheHeaders(),
+        }
+      );
+    }
+
+    // Handle JSON parsing errors
+    if (error instanceof Error && error.message.includes('Invalid JSON')) {
+      return NextResponse.json(
+        { error: 'Failed to parse forecast data' },
+        {
+          status: 500,
           headers: getNoCacheHeaders(),
         }
       );

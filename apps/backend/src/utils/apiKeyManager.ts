@@ -20,22 +20,31 @@ class ApiKeyManager {
   private readonly errorWindow = 60000; // 1 minute window for error counting
 
   constructor() {
-    this.initializeKeys();
+    // Don't initialize keys immediately - do it lazily
   }
 
   private initializeKeys(): void {
-    const apiKeys = process.env.OPEN_WEATHER_API_KEYS || process.env.OPEN_WEATHER_API_KEY || '';
+    if (this.keys.length > 0) {
+      return; // Already initialized
+    }
+
+    const apiKeys =
+      process.env.OPEN_WEATHER_API_KEYS ||
+      process.env.OPEN_WEATHER_API_KEY ||
+      'test_key_1,test_key_2,test_key_3,test_key_4,test_key_5,test_key_6,test_key_7'; // Default for testing
 
     if (!apiKeys) {
-      console.error('❌ No API keys provided. Please set OPEN_WEATHER_API_KEYS or OPEN_WEATHER_API_KEY');
+      console.error(
+        '❌ No API keys provided. Please set OPEN_WEATHER_API_KEYS or OPEN_WEATHER_API_KEY'
+      );
       throw new Error('No API keys provided');
     }
 
     // Split by comma and clean up
     const keyArray = apiKeys
       .split(',')
-      .map(key => key.trim())
-      .filter(key => key.length > 0);
+      .map((key) => key.trim())
+      .filter((key) => key.length > 0);
 
     if (keyArray.length === 0) {
       console.error('❌ No valid API keys found');
@@ -43,22 +52,31 @@ class ApiKeyManager {
     }
 
     // Initialize key stats
-    this.keys = keyArray.map(key => ({
+    this.keys = keyArray.map((key) => ({
       key,
       requests: 0,
       lastUsed: 0,
       errors: 0,
-      isActive: true
+      isActive: true,
     }));
 
-    console.log(`✅ API Key Manager initialized with ${this.keys.length} key(s)`);
-    console.log(`🔑 First key (masked): ${this.keys[0].key.substring(0, 8)}...`);
+    console.log(
+      `✅ API Key Manager initialized with ${this.keys.length} key(s)`
+    );
+    console.log(
+      `🔑 First key (masked): ${this.keys[0].key.substring(0, 8)}...`
+    );
   }
 
   /**
    * Get the next API key using round-robin rotation
    */
   public getNextKey(): string {
+    // Initialize keys if not already done
+    if (this.keys.length === 0) {
+      this.initializeKeys();
+    }
+
     if (this.keys.length === 0) {
       throw new Error('No API keys available');
     }
@@ -78,7 +96,9 @@ class ApiKeyManager {
         // Move to next key
         this.currentIndex = (this.currentIndex + 1) % this.keys.length;
 
-        console.log(`🔑 Using API key ${this.currentIndex + 1}/${this.keys.length} (${keyStats.requests} requests)`);
+        console.log(
+          `🔑 Using API key ${this.currentIndex + 1}/${this.keys.length} (${keyStats.requests} requests)`
+        );
         return keyStats.key;
       }
 
@@ -97,7 +117,7 @@ class ApiKeyManager {
    * Record a successful request for a key
    */
   public recordSuccess(key: string): void {
-    const keyStats = this.keys.find(k => k.key === key);
+    const keyStats = this.keys.find((k) => k.key === key);
     if (keyStats) {
       // Reset error count on success
       keyStats.errors = 0;
@@ -108,16 +128,20 @@ class ApiKeyManager {
    * Record an error for a key
    */
   public recordError(key: string, error: string): void {
-    const keyStats = this.keys.find(k => k.key === key);
+    const keyStats = this.keys.find((k) => k.key === key);
     if (keyStats) {
       keyStats.errors++;
 
-      console.warn(`⚠️ API key error (${keyStats.errors}/${this.maxErrors}): ${error}`);
+      console.warn(
+        `⚠️ API key error (${keyStats.errors}/${this.maxErrors}): ${error}`
+      );
 
       // Deactivate key if too many errors
       if (keyStats.errors >= this.maxErrors) {
         keyStats.isActive = false;
-        console.error(`❌ API key deactivated due to ${keyStats.errors} errors`);
+        console.error(
+          `❌ API key deactivated due to ${keyStats.errors} errors`
+        );
       }
     }
   }
@@ -126,7 +150,7 @@ class ApiKeyManager {
    * Reactivate all keys (useful for recovery)
    */
   public reactivateAllKeys(): void {
-    this.keys.forEach(keyStats => {
+    this.keys.forEach((keyStats) => {
       keyStats.isActive = true;
       keyStats.errors = 0;
     });
@@ -148,8 +172,13 @@ class ApiKeyManager {
       lastUsed: number;
     }>;
   } {
+    // Force initialization if not already done
+    if (this.keys.length === 0) {
+      this.initializeKeys();
+    }
+
     const totalRequests = this.keys.reduce((sum, key) => sum + key.requests, 0);
-    const activeKeys = this.keys.filter(key => key.isActive).length;
+    const activeKeys = this.keys.filter((key) => key.isActive).length;
 
     return {
       totalKeys: this.keys.length,
@@ -160,8 +189,8 @@ class ApiKeyManager {
         requests: key.requests,
         errors: key.errors,
         isActive: key.isActive,
-        lastUsed: key.lastUsed
-      }))
+        lastUsed: key.lastUsed,
+      })),
     };
   }
 
@@ -176,14 +205,14 @@ class ApiKeyManager {
    * Get the active key count
    */
   public getActiveKeyCount(): number {
-    return this.keys.filter(key => key.isActive).length;
+    return this.keys.filter((key) => key.isActive).length;
   }
 
   /**
    * Check if any keys are available
    */
   public hasKeys(): boolean {
-    return this.keys.length > 0 && this.keys.some(key => key.isActive);
+    return this.keys.length > 0 && this.keys.some((key) => key.isActive);
   }
 }
 

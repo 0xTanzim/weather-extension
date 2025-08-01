@@ -83,9 +83,22 @@ const WeatherCard: React.FC<WeatherCardProps> = ({
     }
   };
 
-  const convertTemperature = (temp: number, toCelsius: boolean) => {
-    const converted = toCelsius ? temp : Math.round((temp * 9) / 5 + 32);
-    return Math.round(converted); // Round to whole number
+  const convertTemperature = (temp: number, tempScale: OpenWeatherTempScale) => {
+    // The API already provides temperatures in the correct scale, so we just round them
+    return Math.round(temp);
+  };
+
+  const getTempUnit = (tempScale: OpenWeatherTempScale) => {
+    switch (tempScale) {
+      case 'metric':
+        return 'C';
+      case 'imperial':
+        return 'F';
+      case 'standard':
+        return 'K';
+      default:
+        return 'C';
+    }
   };
 
   if (cardState === 'loading') {
@@ -194,9 +207,9 @@ const WeatherCard: React.FC<WeatherCardProps> = ({
             >
               {convertTemperature(
                 weatherData.main.temp,
-                tempScale === 'metric'
+                tempScale
               )}
-              °{tempScale === 'metric' ? 'C' : 'F'}
+              °{getTempUnit(tempScale)}
             </div>
             <p
               className={`capitalize text-shadow-sm ${
@@ -217,9 +230,9 @@ const WeatherCard: React.FC<WeatherCardProps> = ({
             <p className="font-semibold text-shadow-sm">
               {convertTemperature(
                 weatherData.main.feels_like,
-                tempScale === 'metric'
+                tempScale
               )}
-              °{tempScale === 'metric' ? 'C' : 'F'}
+              °{getTempUnit(tempScale)}
             </p>
           </div>
           <div className="text-center">
@@ -231,14 +244,19 @@ const WeatherCard: React.FC<WeatherCardProps> = ({
           <div className="text-center">
             <p className="text-white/60 text-xs">Wind</p>
             <p className="font-semibold text-shadow-sm">
-              {weatherData.wind.speed} km/h
+              {weatherData.wind?.speed || 'N/A'} km/h
             </p>
           </div>
           <div className="text-center">
             <p className="text-white/60 text-xs">Sun</p>
             <p className="font-semibold text-shadow-sm text-xs">
-              {formatTime(weatherData.sys.sunrise).split(':')[0]}/
-              {formatTime(weatherData.sys.sunset).split(':')[0]}
+              {weatherData.sys?.sunrise
+                ? formatTime(weatherData.sys.sunrise).split(':')[0]
+                : 'N/A'}
+              /
+              {weatherData.sys?.sunset
+                ? formatTime(weatherData.sys.sunset).split(':')[0]
+                : 'N/A'}
             </p>
           </div>
         </div>
@@ -275,8 +293,8 @@ const WeatherCard: React.FC<WeatherCardProps> = ({
                   />
                 </div>
                 <p className="text-xs">
-                  {convertTemperature(day.main.temp, tempScale === 'metric')}°
-                  {tempScale === 'metric' ? 'C' : 'F'}
+                  {convertTemperature(day.main.temp, tempScale)}°
+                  {getTempUnit(tempScale)}
                 </p>
                 <p className="text-xs capitalize opacity-80">
                   {day.weather[0].description}

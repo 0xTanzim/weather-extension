@@ -34,8 +34,7 @@ class ClientCache {
   }
 
   // Weather cache methods
-  getWeather(city: string, units: string): any | null {
-    const key = this.getWeatherKey(city, units);
+  getWeather(key: string): any | null {
     const entry = this.weatherCache.get(key);
 
     if (!entry) return null;
@@ -45,17 +44,30 @@ class ClientCache {
       return null;
     }
 
-    console.log(`Client cache HIT for ${city} (${units})`);
+    // Update timestamp to mark as most recently used
+    entry.timestamp = Date.now();
+
+    console.log(`Client cache HIT for ${key} (timestamp: ${entry.timestamp})`);
     return entry.data;
   }
 
-  setWeather(city: string, units: string, data: any): void {
-    const key = this.getWeatherKey(city, units);
-
-    // LRU eviction
+  setWeather(key: string, data: any): void {
+    // LRU eviction - remove oldest entry if cache is full
     if (this.weatherCache.size >= this.config.maxSize) {
-      const oldestKey = this.weatherCache.keys().next().value;
-      if (oldestKey !== undefined) {
+      let oldestKey: string | undefined;
+      let oldestTime = Infinity;
+
+      for (const [k, entry] of this.weatherCache.entries()) {
+        if (entry.timestamp < oldestTime) {
+          oldestTime = entry.timestamp;
+          oldestKey = k;
+        }
+      }
+
+      if (oldestKey) {
+        console.log(
+          `LRU eviction: removing ${oldestKey} (timestamp: ${oldestTime})`
+        );
         this.weatherCache.delete(oldestKey);
       }
     }
@@ -66,12 +78,13 @@ class ClientCache {
       ttl: this.config.weatherTTL,
     });
 
-    console.log(`Client cache SET for ${city} (${units})`);
+    console.log(
+      `Client cache SET for ${key} (size: ${this.weatherCache.size})`
+    );
   }
 
   // Forecast cache methods
-  getForecast(city: string, units: string): any | null {
-    const key = this.getForecastKey(city, units);
+  getForecast(key: string): any | null {
     const entry = this.forecastCache.get(key);
 
     if (!entry) return null;
@@ -81,17 +94,27 @@ class ClientCache {
       return null;
     }
 
-    console.log(`Client cache HIT for forecast ${city} (${units})`);
+    // Update timestamp to mark as most recently used
+    entry.timestamp = Date.now();
+
+    console.log(`Client cache HIT for forecast ${key}`);
     return entry.data;
   }
 
-  setForecast(city: string, units: string, data: any): void {
-    const key = this.getForecastKey(city, units);
-
-    // LRU eviction
+  setForecast(key: string, data: any): void {
+    // LRU eviction - remove oldest entry if cache is full
     if (this.forecastCache.size >= this.config.maxSize) {
-      const oldestKey = this.forecastCache.keys().next().value;
-      if (oldestKey !== undefined) {
+      let oldestKey: string | undefined;
+      let oldestTime = Infinity;
+
+      for (const [k, entry] of this.forecastCache.entries()) {
+        if (entry.timestamp < oldestTime) {
+          oldestTime = entry.timestamp;
+          oldestKey = k;
+        }
+      }
+
+      if (oldestKey) {
         this.forecastCache.delete(oldestKey);
       }
     }
@@ -102,12 +125,11 @@ class ClientCache {
       ttl: this.config.forecastTTL,
     });
 
-    console.log(`Client cache SET for forecast ${city} (${units})`);
+    console.log(`Client cache SET for forecast ${key}`);
   }
 
-  // Geocoding cache methods
-  getGeocode(lat: number, lon: number): any | null {
-    const key = this.getGeocodeKey(lat, lon);
+  // Geocode cache methods
+  getGeocode(key: string): any | null {
     const entry = this.geocodeCache.get(key);
 
     if (!entry) return null;
@@ -117,17 +139,27 @@ class ClientCache {
       return null;
     }
 
-    console.log(`Client cache HIT for coordinates (${lat}, ${lon})`);
+    // Update timestamp to mark as most recently used
+    entry.timestamp = Date.now();
+
+    console.log(`Client cache HIT for geocode ${key}`);
     return entry.data;
   }
 
-  setGeocode(lat: number, lon: number, data: any): void {
-    const key = this.getGeocodeKey(lat, lon);
-
-    // LRU eviction
+  setGeocode(key: string, data: any): void {
+    // LRU eviction - remove oldest entry if cache is full
     if (this.geocodeCache.size >= this.config.maxSize) {
-      const oldestKey = this.geocodeCache.keys().next().value;
-      if (oldestKey !== undefined) {
+      let oldestKey: string | undefined;
+      let oldestTime = Infinity;
+
+      for (const [k, entry] of this.geocodeCache.entries()) {
+        if (entry.timestamp < oldestTime) {
+          oldestTime = entry.timestamp;
+          oldestKey = k;
+        }
+      }
+
+      if (oldestKey) {
         this.geocodeCache.delete(oldestKey);
       }
     }
@@ -138,23 +170,23 @@ class ClientCache {
       ttl: this.config.geocodeTTL,
     });
 
-    console.log(`Client cache SET for coordinates (${lat}, ${lon})`);
+    console.log(`Client cache SET for geocode ${key}`);
   }
 
-  // Cache key generation
-  private getWeatherKey(city: string, units: string): string {
-    return `weather_${city.toLowerCase().trim()}_${units}`;
+  // Key generation methods for external use
+  getWeatherKey(city: string, units: string): string {
+    return `weather-${city}-${units}`;
   }
 
-  private getForecastKey(city: string, units: string): string {
-    return `forecast_${city.toLowerCase().trim()}_${units}`;
+  getForecastKey(city: string, units: string): string {
+    return `forecast-${city}-${units}`;
   }
 
-  private getGeocodeKey(lat: number, lon: number): string {
-    // Round to 3 decimal places for cache efficiency
-    const latRounded = lat.toFixed(3);
-    const lonRounded = lon.toFixed(3);
-    return `geocode_${latRounded}_${lonRounded}`;
+  getGeocodeKey(lat: number, lon: number): string {
+    // Round to 4 decimal places for cache efficiency
+    const latRounded = Number(lat).toFixed(4);
+    const lonRounded = Number(lon).toFixed(4);
+    return `geocode-${latRounded}-${lonRounded}`;
   }
 
   // Cache management
