@@ -36,4 +36,4 @@ echo "   pnpm test             # Run tests"
 echo ""
 
 # Start both apps in development mode
-pnpm dev 
+pnpm dev

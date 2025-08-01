@@ -9,18 +9,21 @@ interface CacheEntry<T> {
 
 interface CacheConfig {
   weatherTTL: number; // 30 minutes
+  forecastTTL: number; // 1 hour
   geocodeTTL: number; // 24 hours
   maxSize: number; // 100 entries
 }
 
 class ClientCache {
   private weatherCache = new Map<string, CacheEntry<any>>();
+  private forecastCache = new Map<string, CacheEntry<any>>();
   private geocodeCache = new Map<string, CacheEntry<any>>();
   private config: CacheConfig;
 
   constructor(config: Partial<CacheConfig> = {}) {
     this.config = {
       weatherTTL: 30 * 60 * 1000, // 30 minutes
+      forecastTTL: 60 * 60 * 1000, // 1 hour
       geocodeTTL: 24 * 60 * 60 * 1000, // 24 hours
       maxSize: 100,
       ...config,
@@ -66,6 +69,42 @@ class ClientCache {
     console.log(`Client cache SET for ${city} (${units})`);
   }
 
+  // Forecast cache methods
+  getForecast(city: string, units: string): any | null {
+    const key = this.getForecastKey(city, units);
+    const entry = this.forecastCache.get(key);
+
+    if (!entry) return null;
+
+    if (Date.now() - entry.timestamp > entry.ttl) {
+      this.forecastCache.delete(key);
+      return null;
+    }
+
+    console.log(`Client cache HIT for forecast ${city} (${units})`);
+    return entry.data;
+  }
+
+  setForecast(city: string, units: string, data: any): void {
+    const key = this.getForecastKey(city, units);
+
+    // LRU eviction
+    if (this.forecastCache.size >= this.config.maxSize) {
+      const oldestKey = this.forecastCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.forecastCache.delete(oldestKey);
+      }
+    }
+
+    this.forecastCache.set(key, {
+      data,
+      timestamp: Date.now(),
+      ttl: this.config.forecastTTL,
+    });
+
+    console.log(`Client cache SET for forecast ${city} (${units})`);
+  }
+
   // Geocoding cache methods
   getGeocode(lat: number, lon: number): any | null {
     const key = this.getGeocodeKey(lat, lon);
@@ -107,6 +146,10 @@ class ClientCache {
     return `weather_${city.toLowerCase().trim()}_${units}`;
   }
 
+  private getForecastKey(city: string, units: string): string {
+    return `forecast_${city.toLowerCase().trim()}_${units}`;
+  }
+
   private getGeocodeKey(lat: number, lon: number): string {
     // Round to 3 decimal places for cache efficiency
     const latRounded = lat.toFixed(3);
@@ -117,6 +160,7 @@ class ClientCache {
   // Cache management
   clear(): void {
     this.weatherCache.clear();
+    this.forecastCache.clear();
     this.geocodeCache.clear();
     console.log('Client cache cleared');
   }
@@ -129,6 +173,14 @@ class ClientCache {
     for (const [key, entry] of this.weatherCache.entries()) {
       if (now - entry.timestamp > entry.ttl) {
         this.weatherCache.delete(key);
+        cleaned++;
+      }
+    }
+
+    // Clean forecast cache
+    for (const [key, entry] of this.forecastCache.entries()) {
+      if (now - entry.timestamp > entry.ttl) {
+        this.forecastCache.delete(key);
         cleaned++;
       }
     }
@@ -149,24 +201,34 @@ class ClientCache {
   // Cache statistics
   getStats(): {
     weatherSize: number;
+    forecastSize: number;
     geocodeSize: number;
     totalSize: number;
   } {
     return {
       weatherSize: this.weatherCache.size,
+      forecastSize: this.forecastCache.size,
       geocodeSize: this.geocodeCache.size,
-      totalSize: this.weatherCache.size + this.geocodeCache.size,
+      totalSize:
+        this.weatherCache.size +
+        this.forecastCache.size +
+        this.geocodeCache.size,
     };
   }
 
   // Export cache for debugging (compatible with older TypeScript targets)
   exportCache(): any {
     const weatherObj: Record<string, any> = {};
+    const forecastObj: Record<string, any> = {};
     const geocodeObj: Record<string, any> = {};
 
     // Convert Maps to objects manually
     for (const [key, value] of this.weatherCache.entries()) {
       weatherObj[key] = value;
+    }
+
+    for (const [key, value] of this.forecastCache.entries()) {
+      forecastObj[key] = value;
     }
 
     for (const [key, value] of this.geocodeCache.entries()) {
@@ -175,6 +237,7 @@ class ClientCache {
 
     return {
       weather: weatherObj,
+      forecast: forecastObj,
       geocode: geocodeObj,
       stats: this.getStats(),
     };

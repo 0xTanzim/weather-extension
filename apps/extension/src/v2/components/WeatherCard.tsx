@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { OpenWeatherData, OpenWeatherTempScale } from '../../types';
-import { getWeatherData, getWeatherIconUrl } from '../../utils/api';
+import {
+  getForecastData,
+  getWeatherData,
+  getWeatherIconUrl,
+} from '../../utils/api';
 
 interface WeatherCardProps {
   city: string;
@@ -22,25 +26,36 @@ const WeatherCard: React.FC<WeatherCardProps> = ({
   overlayMode,
 }) => {
   const [weatherData, setWeatherData] = useState<OpenWeatherData | null>(null);
+  const [forecastData, setForecastData] = useState<any>(null);
   const [cardState, setCardState] = useState<WeatherCardState>('loading');
   const [errorMessage, setErrorMessage] = useState<string>('');
 
   useEffect(() => {
     setCardState('loading');
     setWeatherData(null);
+    setForecastData(null);
     setErrorMessage('');
 
-    getWeatherData(city, tempScale)
-      .then((data) => {
-        setWeatherData(data);
+    // Fetch both current weather and forecast data
+    const fetchData = async () => {
+      try {
+        const [weather, forecast] = await Promise.all([
+          getWeatherData(city, tempScale),
+          getForecastData(city, tempScale),
+        ]);
+
+        setWeatherData(weather);
+        setForecastData(forecast);
         setCardState('ready');
-      })
-      .catch((error) => {
+      } catch (error) {
         setCardState('error');
         setErrorMessage(
           error instanceof Error ? error.message : 'Unknown error'
         );
-      });
+      }
+    };
+
+    fetchData();
   }, [city, tempScale]);
 
   const formatDate = (timestamp: number) => {
@@ -71,36 +86,6 @@ const WeatherCard: React.FC<WeatherCardProps> = ({
   const convertTemperature = (temp: number, toCelsius: boolean) => {
     const converted = toCelsius ? temp : Math.round((temp * 9) / 5 + 32);
     return Math.round(converted); // Round to whole number
-  };
-
-  // Generate realistic 5-day forecast data
-  const generateForecastData = (baseTemp: number, baseIcon: string) => {
-    const forecast = [];
-    const icons = ['01d', '02d', '03d', '04d', '10d', '13d'];
-    const descriptions = [
-      'Clear Sky',
-      'Partly Cloudy',
-      'Scattered Clouds',
-      'Broken Clouds',
-      'Light Rain',
-      'Snow',
-    ];
-
-    for (let i = 1; i <= 5; i++) {
-      const tempVariation = (Math.random() - 0.5) * 6; // ±3 degrees
-      const iconIndex = Math.floor(Math.random() * icons.length);
-      forecast.push({
-        dt: weatherData!.dt + i * 86400,
-        main: { temp: Math.round(baseTemp + tempVariation) }, // Round forecast temps too
-        weather: [
-          {
-            description: descriptions[iconIndex],
-            icon: icons[iconIndex],
-          },
-        ],
-      });
-    }
-    return forecast;
   };
 
   if (cardState === 'loading') {
@@ -135,11 +120,6 @@ const WeatherCard: React.FC<WeatherCardProps> = ({
   }
 
   if (!weatherData) return null;
-
-  const forecastData = generateForecastData(
-    weatherData.main.temp,
-    weatherData.weather[0].icon
-  );
 
   return (
     <div className={`weather-card ${overlayMode ? 'min-h-[60px]' : ''}`}>
@@ -265,13 +245,13 @@ const WeatherCard: React.FC<WeatherCardProps> = ({
       </div>
 
       {/* 5-Day Forecast (if not in overlay mode) */}
-      {!overlayMode && (
+      {!overlayMode && forecastData && (
         <div className="mt-3">
           <h3 className="text-xs font-semibold mb-2 text-shadow-sm">
             5-Day Forecast
           </h3>
           <div className="grid grid-cols-5 gap-1">
-            {forecastData.map((day, idx) => (
+            {forecastData.list.slice(0, 5).map((day: any, idx: number) => (
               <div
                 key={idx}
                 className="bg-white/10 rounded-lg p-1 text-center hover:bg-white/20 transition-all duration-300 shadow-lg"
