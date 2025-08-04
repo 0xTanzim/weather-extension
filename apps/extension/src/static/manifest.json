@@ -2,7 +2,11 @@
   "$schema": "https://json.schemastore.org/chrome-manifest",
   "name": "ClimaCue – Smart Minimal Weather",
   "description": "Get real-time weather information for any city with a beautiful, modern interface.",
-  "version": "2.0.01",
+  "version": "2.0.02",
+  "short_name": "ClimaCue",
+  "version_name": "2.0.02",
+  
+
   "manifest_version": 3,
   "icons": {
     "16": "icon.png",

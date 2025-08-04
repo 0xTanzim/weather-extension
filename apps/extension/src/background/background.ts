@@ -15,6 +15,47 @@ import {
 let weatherAlarmName: string | null = null;
 let contextMenuId: string | null = null;
 
+// Function to update badge with weather data
+async function updateBadgeWithWeather() {
+  try {
+    const options = await getStoredOptions();
+    if (!options || !options.homeCity || options.homeCity === '') {
+      // Clear badge if no home city is set
+      chrome.action.setBadgeText({ text: '' });
+      return;
+    }
+
+    const data = await getWeatherData(options.homeCity!, options.tempScale);
+    if (data) {
+      const tempText = `${Math.round(data.main.temp)}°${
+        options.tempScale === 'metric' ? 'C' : 'F'
+      }`;
+
+      chrome.action.setBadgeText({
+        text: tempText,
+      });
+
+      // Set badge color based on temperature
+      const temp = data.main.temp;
+      let badgeColor = '#4CAF50'; // Green for moderate temps
+
+      if (temp < 0) {
+        badgeColor = '#2196F3'; // Blue for cold
+      } else if (temp > 30) {
+        badgeColor = '#F44336'; // Red for hot
+      }
+
+      chrome.action.setBadgeBackgroundColor({
+        color: badgeColor,
+      });
+    }
+  } catch (error) {
+    console.error('Error updating weather badge:', error);
+    // Clear badge on error
+    chrome.action.setBadgeText({ text: '' });
+  }
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
   try {
     // Initialize storage with default values
@@ -49,8 +90,45 @@ chrome.runtime.onInstalled.addListener(async () => {
       periodInMinutes: 60,
     });
     weatherAlarmName = 'weatherUpdate';
+
+    // Update badge immediately on installation
+    await updateBadgeWithWeather();
   } catch (error) {
     console.error('Error during extension initialization:', error);
+  }
+});
+
+// Update badge when extension starts (browser startup)
+chrome.runtime.onStartup.addListener(async () => {
+  try {
+    await updateBadgeWithWeather();
+  } catch (error) {
+    console.error('Error updating badge on startup:', error);
+  }
+});
+
+// Update badge when popup opens
+chrome.action.onClicked.addListener(async () => {
+  try {
+    await updateBadgeWithWeather();
+  } catch (error) {
+    console.error('Error updating badge on popup open:', error);
+  }
+});
+
+// Handle messages from popup to update badge
+chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
+  try {
+    if (message.type === 'UPDATE_BADGE') {
+      await updateBadgeWithWeather();
+      sendResponse({ success: true });
+    }
+  } catch (error) {
+    console.error('Error handling badge update message:', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 });
 
@@ -92,23 +170,9 @@ chrome.contextMenus.onClicked.addListener(async (event) => {
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === 'weatherUpdate') {
     try {
-      const options = await getStoredOptions();
-      if (!options || !options.homeCity || options.homeCity === '') {
-        return;
-      }
-
-      const data = await getWeatherData(options.homeCity!, options.tempScale);
-      if (data) {
-        const tempText = `${Math.round(data.main.temp)}°${
-          options.tempScale === 'metric' ? 'C' : 'F'
-        }`;
-
-        chrome.action.setBadgeText({
-          text: tempText,
-        });
-      }
+      await updateBadgeWithWeather();
     } catch (error) {
-      console.error('Error updating weather badge:', error);
+      console.error('Error updating weather badge from alarm:', error);
     }
   }
 });
