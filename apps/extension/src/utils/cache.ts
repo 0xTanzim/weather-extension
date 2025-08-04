@@ -19,6 +19,7 @@ class ClientCache {
   private forecastCache = new Map<string, CacheEntry<any>>();
   private geocodeCache = new Map<string, CacheEntry<any>>();
   private config: CacheConfig;
+  private cleanupInterval: NodeJS.Timeout | null = null;
 
   constructor(config: Partial<CacheConfig> = {}) {
     this.config = {
@@ -30,7 +31,16 @@ class ClientCache {
     };
 
     // Clean up expired entries periodically
-    setInterval(() => this.cleanup(), 5 * 60 * 1000); // Every 5 minutes
+    this.cleanupInterval = setInterval(() => this.cleanup(), 5 * 60 * 1000); // Every 5 minutes
+  }
+
+  // Cleanup method to prevent memory leaks
+  destroy(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+    this.clear();
   }
 
   // Weather cache methods
@@ -115,6 +125,9 @@ class ClientCache {
       }
 
       if (oldestKey) {
+        console.log(
+          `LRU eviction: removing ${oldestKey} (timestamp: ${oldestTime})`
+        );
         this.forecastCache.delete(oldestKey);
       }
     }
@@ -160,6 +173,9 @@ class ClientCache {
       }
 
       if (oldestKey) {
+        console.log(
+          `LRU eviction: removing ${oldestKey} (timestamp: ${oldestTime})`
+        );
         this.geocodeCache.delete(oldestKey);
       }
     }
@@ -173,13 +189,13 @@ class ClientCache {
     console.log(`Client cache SET for geocode ${key}`);
   }
 
-  // Key generation methods for external use
+  // Cache key generators
   getWeatherKey(city: string, units: string): string {
-    return `weather-${city}-${units}`;
+    return `weather-${city.toLowerCase().trim()}-${units}`;
   }
 
   getForecastKey(city: string, units: string): string {
-    return `forecast-${city}-${units}`;
+    return `forecast-${city.toLowerCase().trim()}-${units}`;
   }
 
   getGeocodeKey(lat: number, lon: number): string {
@@ -278,6 +294,13 @@ class ClientCache {
 
 // Create global cache instance
 export const clientCache = new ClientCache();
+
+// Clean up cache when extension is unloaded
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    clientCache.destroy();
+  });
+}
 
 // Export cache class for testing
 export { ClientCache };

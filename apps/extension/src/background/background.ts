@@ -10,6 +10,11 @@ import {
  * Background script for the weather extension.
  * Initializes the extension, sets up context menus, and handles alarms.
  */
+
+// Store references for cleanup
+let weatherAlarmName: string | null = null;
+let contextMenuId: string | null = null;
+
 chrome.runtime.onInstalled.addListener(async () => {
   try {
     // Initialize storage with default values
@@ -17,26 +22,56 @@ chrome.runtime.onInstalled.addListener(async () => {
     await setStoreOptions({
       tempScale: 'metric',
       homeCity: '',
-      hasAutoOverlay: false
+      hasAutoOverlay: false,
     });
 
     // Create context menu
-    chrome.contextMenus.create({
-      contexts: ['selection'],
-      title: 'Add selected text as city',
-      id: 'addCityFromSelection',
-    }, () => {
-      if (chrome.runtime.lastError) {
-        console.error('Failed to create context menu:', chrome.runtime.lastError);
+    chrome.contextMenus.create(
+      {
+        contexts: ['selection'],
+        title: 'Add selected text as city',
+        id: 'addCityFromSelection',
+      },
+      () => {
+        if (chrome.runtime.lastError) {
+          console.error(
+            'Failed to create context menu:',
+            chrome.runtime.lastError
+          );
+        } else {
+          contextMenuId = 'addCityFromSelection';
+        }
       }
-    });
+    );
 
     // Create alarm for weather updates
-    chrome.alarms.create('weatherUpdate', {
+    await chrome.alarms.create('weatherUpdate', {
       periodInMinutes: 60,
     });
+    weatherAlarmName = 'weatherUpdate';
   } catch (error) {
     console.error('Error during extension initialization:', error);
+  }
+});
+
+// Cleanup function for extension uninstall
+chrome.runtime.onSuspend.addListener(async () => {
+  try {
+    // Clear alarms
+    if (weatherAlarmName) {
+      await chrome.alarms.clear(weatherAlarmName);
+      weatherAlarmName = null;
+    }
+
+    // Clear context menus
+    if (contextMenuId) {
+      await chrome.contextMenus.remove(contextMenuId);
+      contextMenuId = null;
+    }
+
+    console.log('Extension cleanup completed');
+  } catch (error) {
+    console.error('Error during extension cleanup:', error);
   }
 });
 

@@ -49,7 +49,7 @@ describe('API Utilities', () => {
       const result = await getWeatherData('Dhaka', 'metric');
 
       expect(fetch).toHaveBeenCalledWith(
-        'http://localhost:3000/api/weather?city=Dhaka&units=metric',
+        'https://weather-extentions-backend.vercel.app/api/weather?city=Dhaka&units=metric',
         expect.objectContaining({
           headers: {
             'Content-Type': 'application/json',
@@ -103,7 +103,7 @@ describe('API Utilities', () => {
       await getWeatherData('  Dhaka  ', 'metric');
 
       expect(fetch).toHaveBeenCalledWith(
-        'http://localhost:3000/api/weather?city=Dhaka&units=metric',
+        'https://weather-extentions-backend.vercel.app/api/weather?city=Dhaka&units=metric',
         expect.any(Object)
       );
     });
@@ -135,7 +135,7 @@ describe('API Utilities', () => {
       const result = await getForecastData('Dhaka', 'metric');
 
       expect(fetch).toHaveBeenCalledWith(
-        'http://localhost:3000/api/forecast?city=Dhaka&units=metric',
+        'https://weather-extentions-backend.vercel.app/api/forecast?city=Dhaka&units=metric',
         expect.any(Object)
       );
       expect(result).toEqual(mockForecastResponse);
@@ -179,7 +179,7 @@ describe('API Utilities', () => {
       const result = await getCityNameFromCoords(23.8103, 90.4125);
 
       expect(fetch).toHaveBeenCalledWith(
-        'http://localhost:3000/api/geocode?lat=23.8103&lon=90.4125',
+        'https://weather-extentions-backend.vercel.app/api/geocode?lat=23.8103&lon=90.4125',
         expect.any(Object)
       );
       expect(result).toBe('Dhaka');

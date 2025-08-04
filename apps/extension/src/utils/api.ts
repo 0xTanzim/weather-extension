@@ -96,12 +96,14 @@ async function secureFetch(
   options: RequestInit = {}
 ): Promise<Response> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(
-    () => controller.abort(),
-    SECURITY_CONFIG.REQUEST_TIMEOUT
-  );
+  let timeoutId: NodeJS.Timeout | null = null;
 
   try {
+    timeoutId = setTimeout(
+      () => controller.abort(),
+      SECURITY_CONFIG.REQUEST_TIMEOUT
+    );
+
     const response = await fetch(url, {
       ...options,
       signal: controller.signal,
@@ -112,10 +114,19 @@ async function secureFetch(
       },
     });
 
-    clearTimeout(timeoutId);
+    // Clear timeout on successful response
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+
     return response;
   } catch (error) {
-    clearTimeout(timeoutId);
+    // Clear timeout on error
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
     throw error;
   }
 }

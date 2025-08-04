@@ -310,8 +310,8 @@ describe('Client Cache', () => {
       const forecastKey = clientCache.getForecastKey('Dhaka', 'metric');
       const geocodeKey = clientCache.getGeocodeKey(23.8103, 90.4125);
 
-      expect(weatherKey).toBe('weather-Dhaka-metric');
-      expect(forecastKey).toBe('forecast-Dhaka-metric');
+      expect(weatherKey).toBe('weather-dhaka-metric');
+      expect(forecastKey).toBe('forecast-dhaka-metric');
       expect(geocodeKey).toBe('geocode-23.8103-90.4125');
     });
 
@@ -319,8 +319,8 @@ describe('Client Cache', () => {
       const weatherKey = clientCache.getWeatherKey('New York', 'imperial');
       const forecastKey = clientCache.getForecastKey('Saint-Jean', 'metric');
 
-      expect(weatherKey).toBe('weather-New York-imperial');
-      expect(forecastKey).toBe('forecast-Saint-Jean-metric');
+      expect(weatherKey).toBe('weather-new york-imperial');
+      expect(forecastKey).toBe('forecast-saint-jean-metric');
     });
   });
 

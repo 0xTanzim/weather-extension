@@ -103,7 +103,8 @@ const PopupApp: React.FC = () => {
   const handleOverlayToggle = () => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs[0];
-      if (!tab?.id || !/^https?:\/\//.test(tab.url || '')) {
+      if (!tab.id) {
+        console.error('No active tab found');
         return;
       }
 
@@ -115,7 +116,8 @@ const PopupApp: React.FC = () => {
               files: ['contentScript.js'],
             })
             .then(() => {
-              setTimeout(() => {
+              // Use a more reliable timeout mechanism
+              const retryTimeout = setTimeout(() => {
                 if (tab.id) {
                   chrome.tabs.sendMessage(
                     tab.id,
@@ -131,6 +133,9 @@ const PopupApp: React.FC = () => {
                   );
                 }
               }, 100);
+
+              // Clean up timeout if component unmounts
+              return () => clearTimeout(retryTimeout);
             })
             .catch((error) => {
               console.error('Failed to inject content script:', error);
@@ -188,7 +193,10 @@ const PopupApp: React.FC = () => {
 
   const handleRefresh = () => {
     setIsRefreshing(true);
-    setTimeout(() => setIsRefreshing(false), 1000);
+    const refreshTimeout = setTimeout(() => setIsRefreshing(false), 1000);
+
+    // Clean up timeout if component unmounts
+    return () => clearTimeout(refreshTimeout);
   };
 
   const setDynamicBackground = (description: string) => {

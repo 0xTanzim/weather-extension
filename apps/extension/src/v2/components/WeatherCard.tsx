@@ -13,6 +13,7 @@ interface WeatherCardProps {
   onSetDefault?: () => void;
   isDefault?: boolean;
   overlayMode?: boolean;
+  theme?: 'dark' | 'light';
 }
 
 type WeatherCardState = 'loading' | 'error' | 'ready';
@@ -24,6 +25,7 @@ const WeatherCard: React.FC<WeatherCardProps> = ({
   onSetDefault,
   isDefault,
   overlayMode,
+  theme = 'dark',
 }) => {
   const [weatherData, setWeatherData] = useState<OpenWeatherData | null>(null);
   const [forecastData, setForecastData] = useState<any>(null);
@@ -83,7 +85,10 @@ const WeatherCard: React.FC<WeatherCardProps> = ({
     }
   };
 
-  const convertTemperature = (temp: number, tempScale: OpenWeatherTempScale) => {
+  const convertTemperature = (
+    temp: number,
+    tempScale: OpenWeatherTempScale
+  ) => {
     // The API already provides temperatures in the correct scale, so we just round them
     return Math.round(temp);
   };
@@ -101,12 +106,19 @@ const WeatherCard: React.FC<WeatherCardProps> = ({
     }
   };
 
+  // Theme-based text colors
+  const textColor = theme === 'dark' ? 'text-white' : 'text-gray-900';
+  const textMuted = theme === 'dark' ? 'text-white/60' : 'text-gray-600';
+  const textSecondary = theme === 'dark' ? 'text-white/70' : 'text-gray-700';
+
   if (cardState === 'loading') {
     return (
-      <div className={`weather-card ${overlayMode ? 'min-h-[60px]' : ''}`}>
+      <div className={`weather-card ${overlayMode ? 'min-h-[80px]' : ''}`}>
         <div className="flex items-center justify-center space-x-3">
           <div className="spinner"></div>
-          <span className="text-white/80 text-sm">Loading weather data...</span>
+          <span className={`${textSecondary} text-sm`}>
+            Loading weather data...
+          </span>
         </div>
       </div>
     );
@@ -114,12 +126,12 @@ const WeatherCard: React.FC<WeatherCardProps> = ({
 
   if (cardState === 'error') {
     return (
-      <div className={`weather-card ${overlayMode ? 'min-h-[60px]' : ''}`}>
+      <div className={`weather-card ${overlayMode ? 'min-h-[80px]' : ''}`}>
         <div className="text-center">
-          <h3 className="text-lg font-semibold text-white text-shadow-sm mb-2">
+          <h3 className={`text-lg font-semibold ${textColor} mb-2`}>
             {city.charAt(0).toUpperCase() + city.slice(1)}
           </h3>
-          <p className="text-white/70 text-sm">
+          <p className={`${textSecondary} text-sm`}>
             {errorMessage || `Error fetching weather data for ${city}`}
           </p>
           {onDelete && (
@@ -135,18 +147,18 @@ const WeatherCard: React.FC<WeatherCardProps> = ({
   if (!weatherData) return null;
 
   return (
-    <div className={`weather-card ${overlayMode ? 'min-h-[60px]' : ''}`}>
+    <div className={`weather-card ${overlayMode ? 'min-h-[80px]' : ''}`}>
       {/* Header */}
-      <div className="flex justify-between items-start mb-2">
+      <div className="flex justify-between items-start mb-3">
         <div className="flex-1">
           <h2
-            className={`font-semibold text-shadow-sm ${
-              overlayMode ? 'text-xs' : 'text-lg'
-            }`}
+            className={`font-semibold ${
+              overlayMode ? 'text-sm' : 'text-lg'
+            } ${textColor}`}
           >
             {city.charAt(0).toUpperCase() + city.slice(1)}
           </h2>
-          <p className="text-white/60 text-xs mt-1">
+          <p className={`${textMuted} text-xs mt-1`}>
             {formatDate(weatherData.dt)}
           </p>
         </div>
@@ -176,16 +188,16 @@ const WeatherCard: React.FC<WeatherCardProps> = ({
 
       {/* Main Weather Info - Flex Layout */}
       <div
-        className={`flex items-center justify-between mb-2 ${overlayMode ? 'space-x-3' : 'space-x-4'}`}
+        className={`flex items-center justify-between mb-3 ${overlayMode ? 'space-x-4' : 'space-x-4'}`}
       >
         {/* Left side - Weather icon and temp */}
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-3">
           {weatherData?.weather && weatherData.weather.length > 0 && (
             <div className="relative">
               <img
                 src={getWeatherIconUrl(weatherData.weather[0].icon)}
                 alt={weatherData.weather[0].description}
-                className={`${overlayMode ? 'w-8 h-8' : 'w-12 h-12'}`}
+                className={`${overlayMode ? 'w-10 h-10' : 'w-12 h-12'}`}
                 style={{
                   filter:
                     'brightness(1.3) contrast(1.2) drop-shadow(0 2px 4px rgba(0,0,0,0.3))',
@@ -201,18 +213,15 @@ const WeatherCard: React.FC<WeatherCardProps> = ({
           )}
           <div>
             <div
-              className={`font-light text-shadow-sm ${
-                overlayMode ? 'text-lg' : 'text-2xl'
-              }`}
+              className={`font-light ${
+                overlayMode ? 'text-xl' : 'text-2xl'
+              } ${textColor}`}
             >
-              {convertTemperature(
-                weatherData.main.temp,
-                tempScale
-              )}
-              °{getTempUnit(tempScale)}
+              {convertTemperature(weatherData.main.temp, tempScale)}°
+              {getTempUnit(tempScale)}
             </div>
             <p
-              className={`capitalize text-shadow-sm ${
+              className={`capitalize ${textMuted} ${
                 overlayMode ? 'text-xs' : 'text-xs'
               }`}
             >
@@ -223,33 +232,30 @@ const WeatherCard: React.FC<WeatherCardProps> = ({
 
         {/* Right side - Weather details in grid */}
         <div
-          className={`grid grid-cols-2 gap-1 text-xs ${overlayMode ? 'text-xs' : 'text-xs'}`}
+          className={`grid grid-cols-2 gap-2 text-xs ${overlayMode ? 'text-xs' : 'text-xs'}`}
         >
           <div className="text-center">
-            <p className="text-white/60 text-xs">Feels</p>
-            <p className="font-semibold text-shadow-sm">
-              {convertTemperature(
-                weatherData.main.feels_like,
-                tempScale
-              )}
-              °{getTempUnit(tempScale)}
+            <p className={`${textMuted} text-xs`}>Feels</p>
+            <p className={`font-semibold ${textColor}`}>
+              {convertTemperature(weatherData.main.feels_like, tempScale)}°
+              {getTempUnit(tempScale)}
             </p>
           </div>
           <div className="text-center">
-            <p className="text-white/60 text-xs">Humidity</p>
-            <p className="font-semibold text-shadow-sm">
+            <p className={`${textMuted} text-xs`}>Humidity</p>
+            <p className={`font-semibold ${textColor}`}>
               {weatherData.main.humidity}%
             </p>
           </div>
           <div className="text-center">
-            <p className="text-white/60 text-xs">Wind</p>
-            <p className="font-semibold text-shadow-sm">
+            <p className={`${textMuted} text-xs`}>Wind</p>
+            <p className={`font-semibold ${textColor}`}>
               {weatherData.wind?.speed || 'N/A'} km/h
             </p>
           </div>
           <div className="text-center">
-            <p className="text-white/60 text-xs">Sun</p>
-            <p className="font-semibold text-shadow-sm text-xs">
+            <p className={`${textMuted} text-xs`}>Sun</p>
+            <p className={`font-semibold ${textColor} text-xs`}>
               {weatherData.sys?.sunrise
                 ? formatTime(weatherData.sys.sunrise).split(':')[0]
                 : 'N/A'}
@@ -264,17 +270,19 @@ const WeatherCard: React.FC<WeatherCardProps> = ({
 
       {/* 5-Day Forecast (if not in overlay mode) */}
       {!overlayMode && forecastData && (
-        <div className="mt-3">
-          <h3 className="text-xs font-semibold mb-2 text-shadow-sm">
+        <div className="mt-4">
+          <h3 className={`text-xs font-semibold mb-2 ${textColor}`}>
             5-Day Forecast
           </h3>
           <div className="grid grid-cols-5 gap-1">
             {forecastData.list.slice(0, 5).map((day: any, idx: number) => (
               <div
                 key={idx}
-                className="bg-white/10 rounded-lg p-1 text-center hover:bg-white/20 transition-all duration-300 shadow-lg"
+                className={`${theme === 'dark' ? 'bg-white/10' : 'bg-gray-100/80'} rounded-lg p-1 text-center hover:${theme === 'dark' ? 'bg-white/20' : 'bg-gray-200/80'} transition-all duration-300 shadow-lg`}
               >
-                <p className="text-xs font-semibold">{formatDate(day.dt)}</p>
+                <p className={`text-xs font-semibold ${textColor}`}>
+                  {formatDate(day.dt)}
+                </p>
                 <div className="relative">
                   <img
                     src={getWeatherIconUrl(day.weather[0].icon)}
@@ -292,11 +300,11 @@ const WeatherCard: React.FC<WeatherCardProps> = ({
                     }}
                   />
                 </div>
-                <p className="text-xs">
+                <p className={`text-xs ${textColor}`}>
                   {convertTemperature(day.main.temp, tempScale)}°
                   {getTempUnit(tempScale)}
                 </p>
-                <p className="text-xs capitalize opacity-80">
+                <p className={`text-xs capitalize ${textMuted}`}>
                   {day.weather[0].description}
                 </p>
               </div>
