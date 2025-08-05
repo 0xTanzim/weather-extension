@@ -94,6 +94,10 @@ const PopupApp: React.FC = () => {
     setStoreOptions(updateOptions)
       .then(() => {
         setOptions(updateOptions);
+        // Update badge with new temperature scale
+        if (updateOptions.homeCity) {
+          updateBadge(updateOptions.homeCity, updateOptions.tempScale);
+        }
       })
       .catch((error) => {
         console.error('Error updating temperature scale:', error);
@@ -105,6 +109,20 @@ const PopupApp: React.FC = () => {
       const tab = tabs[0];
       if (!tab.id) {
         console.error('No active tab found');
+        return;
+      }
+
+      // Check if the URL is injectable (not chrome://, chrome-extension://, etc.)
+      if (
+        !tab.url ||
+        tab.url.startsWith('chrome://') ||
+        tab.url.startsWith('chrome-extension://') ||
+        tab.url.startsWith('moz-extension://') ||
+        tab.url.startsWith('edge://')
+      ) {
+        alert(
+          'Weather overlay cannot be used on this page. Please navigate to a regular website.'
+        );
         return;
       }
 
@@ -139,6 +157,9 @@ const PopupApp: React.FC = () => {
             })
             .catch((error) => {
               console.error('Failed to inject content script:', error);
+              alert(
+                'Failed to inject weather overlay. Please try refreshing the page and try again.'
+              );
             });
         }
       });
@@ -184,12 +205,35 @@ const PopupApp: React.FC = () => {
       if (data) {
         const tempText = `${Math.round(data.main.temp)}°${tempScale === 'metric' ? 'C' : 'F'}`;
         chrome.action.setBadgeText({ text: tempText });
-        chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
+
+        // Set badge color based on temperature
+        const temp = data.main.temp;
+        let badgeColor = '#4CAF50'; // Green for moderate temps
+
+        if (temp < 0) {
+          badgeColor = '#2196F3'; // Blue for cold
+        } else if (temp > 30) {
+          badgeColor = '#F44336'; // Red for hot
+        }
+
+        chrome.action.setBadgeBackgroundColor({ color: badgeColor });
+
+        // Also send message to background script to update badge
+        chrome.runtime.sendMessage({ type: 'UPDATE_BADGE' });
       }
     } catch (error) {
       console.error('Error updating badge:', error);
+      // Clear badge on error
+      chrome.action.setBadgeText({ text: '' });
     }
   };
+
+  // Update badge when popup loads if home city is set
+  React.useEffect(() => {
+    if (options && options.homeCity) {
+      updateBadge(options.homeCity, options.tempScale);
+    }
+  }, [options]);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
